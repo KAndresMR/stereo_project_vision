@@ -11,29 +11,29 @@ namespace fs = std::filesystem;
 CalibrationSession::CalibrationSession(const CalibrationConfig& config)
     : config_(config) {
     ensureDirectories();
-    std::cout << "[Session] Output: " << fs::absolute(config_.outputDir) << "\n";
+    std::cout << "[Session] Output: " << fs::absolute(config_.datasetDir) << "\n";
     std::cout << "[Session] Target: " << config_.targetPairs << " pairs\n";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 void CalibrationSession::ensureDirectories() const {
-    fs::create_directories(config_.outputDir + "/left");
-    fs::create_directories(config_.outputDir + "/right");
+    fs::create_directories(config_.datasetDir + "/left");
+    fs::create_directories(config_.datasetDir + "/right");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 std::string CalibrationSession::leftPath(int n) const {
     std::ostringstream ss;
-    ss << config_.outputDir << "/left/left_"
+    ss << config_.datasetDir << "/left/left_"
        << std::setw(2) << std::setfill('0') << n << ".jpg";
     return ss.str();
 }
 
 std::string CalibrationSession::rightPath(int n) const {
     std::ostringstream ss;
-    ss << config_.outputDir << "/right/right_"
+    ss << config_.datasetDir << "/right/right_"
        << std::setw(2) << std::setfill('0') << n << ".jpg";
     return ss.str();
 }

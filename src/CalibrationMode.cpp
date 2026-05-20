@@ -159,6 +159,6 @@ void runCalibrationMode(CameraStream& cam1, CameraStream& cam2,
 
     std::cout << "[CalibMode] Done! "
               << session.pairCount() << " pairs in '"
-              << config.outputDir << "'\n";
+              << config.datasetDir << "'\n";
     std::cout << "[CalibMode] Next step: run stereoCalibrate on these pairs.\n";
 }
