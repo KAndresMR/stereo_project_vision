@@ -2,10 +2,16 @@
     "configurations": [
         {
             "name": "Mac",
-            "compileCommands": "/Users/andresmorocho/Downloads/Vision/practicas/build/compile_commands.json",
+            "compileCommands": [
+                "/Users/andresmorocho/Downloads/Vision/practicas/build/compile_commands.json"
+            ],
             "compilerPath": "/usr/bin/clang++",
             "cppStandard": "c++17",
-            "intelliSenseMode": "macos-clang-arm64"
+            "intelliSenseMode": "macos-clang-arm64",
+            "includePath": [
+                "${default}",
+                "/opt/homebrew/Cellar/opencv/4.13.0_8/include/opencv4"
+            ]
         }
     ],
     "version": 4

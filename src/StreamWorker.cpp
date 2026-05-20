@@ -1,5 +1,4 @@
 #include "StreamWorker.hpp"
-
 #include <curl/curl.h>
 #include <thread>
 #include <chrono>
@@ -94,12 +93,36 @@ void streamCamera(const std::string& url, CameraStream& stream) {
             );
 
             if (!img.empty()) {
+                
+                auto now =
+                    std::chrono::steady_clock::now();
 
-                std::lock_guard<std::mutex> lock(
-                    stream.frame_mtx
-                );
+                {
+                    std::lock_guard<std::mutex> lock(
+                        stream.frame_mtx
+                    );
 
-                stream.frame = img;
+                    stream.frame = img;
+
+                    stream.timestamp = now;
+                }
+
+                stream.frameCount++;
+
+                double elapsed =
+                    std::chrono::duration<double>(
+                        now - stream.lastFpsTime
+                    ).count();
+
+                if (elapsed >= 1.0) {
+
+                    stream.fps =
+                        stream.frameCount / elapsed;
+
+                    stream.frameCount = 0;
+
+                    stream.lastFpsTime = now;
+                }
             }
 
             size_t consumed =
