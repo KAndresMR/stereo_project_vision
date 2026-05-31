@@ -404,7 +404,7 @@ static void runLiveDisparity(
     params.blockSize = 7;
     params.uniquenessRatio = 10;
     params.speckleWindowSize = 100;
-    params.speckleRange = 32;
+    params.speckleRange = 2;
 
     SGBMProcessor sgbm(params);
 
@@ -412,10 +412,10 @@ static void runLiveDisparity(
     std::string winName = "Stereo Vision Dashboard";
     cv::namedWindow(winName, cv::WINDOW_AUTOSIZE);
 
-    int tbNumDisp = 6; // 4*16 = 64
-    int tbBlockSize = 7;
-    int tbUniqueness = 15;
-    int tbSpeckleWin = 100;
+    int tbNumDisp = 8; // 4*16 = 64
+    int tbBlockSize = 9;
+    int tbUniqueness = 25;
+    int tbSpeckleWin = 200;
     int tbClaheClip = 25; // 40 / 10.0 = 4.0
     int tbClaheTile = 8;  // Cuadrículas de 8x8
     int tbPreBlur = 8;
@@ -450,8 +450,10 @@ static void runLiveDisparity(
         cv::resize(out, out, cv::Size(width, height));
         return out;
     };
-
-    Kalman1D kalmanFilter(1e-3, 0.1); 
+    
+    // ── DOS FILTROS INDEPENDIENTES ──
+    Kalman1D kalmanFijo(1e-3, 0.1);      // Para la Ventana 1 (Centro estático)
+    Kalman1D kalmanDinamico(1e-3, 0.1);  // Para la Ventana 2 (Filtro AR que persigue)
     
     // Tus constantes físicas obtenidas de la calibración
     const float FOCAL_LENGTH_PX = 600.0f; // Promedio entre fx (600.6) y fy (599.8)
@@ -525,98 +527,129 @@ static void runLiveDisparity(
             }
 
             // ─────────────────────────────────────────────────────────────────
-            // 2. VENTANA 1: CÁLCULO Z ESTABILIZADO (KALMAN)
+            // 2. VENTANA 1: MEDICIÓN FIJA AL CENTRO
             // ─────────────────────────────────────────────────────────────────
-            
             cv::Mat kalmanView = rL.clone();
+            cv::Point centroPantalla(kalmanView.cols / 2, kalmanView.rows / 2);
+            int roiFijo = 20;
             
-            int roiSize = 20;
-            cv::Rect centerRoi((temporalDisp.cols - roiSize)/2, (temporalDisp.rows - roiSize)/2, roiSize, roiSize);
-            float medianDisp = getMedianDisparity(temporalDisp, centerRoi);
+            // Medir siempre en el centro
+            cv::Rect roiCentro(centroPantalla.x - roiFijo/2, centroPantalla.y - roiFijo/2, roiFijo, roiFijo);
+            float dispCentro = getMedianDisparity(rawDisp, roiCentro);
+            float zCentro = -1.0f;
             
-            // [!] LA SOLUCIÓN: Declaramos la variable AFUERA para que viva en todo el bloque
-            float stableDepthCm = -1.0f; 
+            if (dispCentro > 0.0f) {
+                float rawZCentro = ((FOCAL_LENGTH_PX * BASELINE_M) / dispCentro) * 100.0f;
+                zCentro = kalmanFijo.update(rawZCentro);
 
-            if (medianDisp > 0.0f) {
-                // Asegúrate de usar tu constante de baseline (ej. BASELINE_CM = 7.414f) 
-                // Si tienes BASELINE_M (0.07414f), multiplica al final por 100.0f
-                float rawDepthCm = ((FOCAL_LENGTH_PX * BASELINE_M) / medianDisp) * 100.0f;
-                
-                // Asignamos el valor a la variable que ya creamos afuera
-                stableDepthCm = kalmanFilter.update(rawDepthCm);
-
-                if (stableDepthCm > 0.0f && stableDepthCm < 400.0f) {
-                    cv::Point centerPoint(temporalDisp.cols / 2, temporalDisp.rows / 2);
-                    cv::circle(kalmanView, centerPoint, 5, cv::Scalar(0, 255, 0), -1);
-
-                    std::ostringstream kalmanStr;
-                    kalmanStr << std::fixed << std::setprecision(2) << "Z: " << stableDepthCm << " cm";
-                    cv::putText(kalmanView, kalmanStr.str(), cv::Point(centerPoint.x + 15, centerPoint.y), 
+                if (zCentro > 0.0f && zCentro < 400.0f) {
+                    cv::circle(kalmanView, centroPantalla, 5, cv::Scalar(0, 255, 0), -1);
+                    std::ostringstream txtCentro;
+                    txtCentro << std::fixed << std::setprecision(2) << "Z: " << zCentro << " cm";
+                    cv::putText(kalmanView, txtCentro.str(), cv::Point(centroPantalla.x + 15, centroPantalla.y), 
                                 cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
                 }
+            } else {
+                kalmanFijo.update(-1.0f); // Pausar filtro si no hay lectura
             }
-            
             cv::imshow("1 - Medicion de Profundidad", kalmanView);
 
             // ─────────────────────────────────────────────────────────────────
-            // 3. VENTANA 2: EFECTO DE REALIDAD AUMENTADA (TARGETING HUD)
+            // 3. VENTANA 2: EFECTO AR DINÁMICO E INTELIGENTE
             // ─────────────────────────────────────────────────────────────────
-            
-            // Clonamos la cámara izquierda para dibujar encima sin ensuciarla
             cv::Mat arFrame = rL.clone();
-            cv::Point centerPoint(arFrame.cols / 2, arFrame.rows / 2);
+            
+            double minD, maxD;
+            cv::Point minL, maxL;
+            cv::minMaxLoc(temporalDisp, &minD, &maxD, &minL, &maxL);
+            
+            cv::Point targetPoint(arFrame.cols / 2, arFrame.rows / 2);
+            bool targetFound = false;
+            std::vector<std::vector<cv::Point>> contours;
+            int largestContourIdx = -1;
 
-            // Ahora sí reconocerá stableDepthCm sin problemas
-            if (stableDepthCm > 0.0f && stableDepthCm < 400.0f) {
-                // 1. Matemáticas de Reactividad (Mapear Z a tamaño y color)
-                // Hacemos que 't' vaya de 0 (cerca, 30cm) a 1 (lejos, 150cm)
-                float t = std::clamp((stableDepthCm - 30.0f) / 120.0f, 0.0f, 1.0f);
+            if (maxD > 16.0) {
+                cv::Mat closeObjectMask = (temporalDisp > (maxD - 80)); 
+                closeObjectMask.convertTo(closeObjectMask, CV_8U, 1);
+                
+                cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(9, 9));
+                cv::morphologyEx(closeObjectMask, closeObjectMask, cv::MORPH_CLOSE, kernel);
+                cv::findContours(closeObjectMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
-                // 2. Color dinámico: Rojo (cerca) -> Amarillo -> Verde (lejos)
-                int r = (int)(255 * (1.0f - t)); // Más cerca = Más rojo
-                int g = (int)(255 * t);          // Más lejos = Más verde
-                cv::Scalar hudColor(0, g, r);    // Formato BGR de OpenCV
+                double maxArea = 0;
+                double minAreaThresh = 400; 
+                double maxAreaThresh = arFrame.total() * 0.40; 
 
-                // 3. Tamaño dinámico: La mira se hace pequeña (precisa) al acercarse
-                int radius = (int)(40 + 60 * t); // Va de 40px (cerca) a 100px (lejos)
+                for (size_t i = 0; i < contours.size(); i++) {
+                    double area = cv::contourArea(contours[i]);
+                    if (area > maxArea && area > minAreaThresh && area < maxAreaThresh) {
+                        maxArea = area;
+                        largestContourIdx = i;
+                    }
+                }
 
-                // 4. Dibujar la interfaz (HUD)
-                cv::circle(arFrame, centerPoint, radius, hudColor, 2, cv::LINE_AA);
-                cv::circle(arFrame, centerPoint, radius + 10, hudColor, 1, cv::LINE_AA);
-                cv::circle(arFrame, centerPoint, 3, hudColor, -1, cv::LINE_AA);
+                if (largestContourIdx >= 0) {
+                    targetFound = true;
+                    cv::Moments m = cv::moments(contours[largestContourIdx]);
+                    targetPoint.x = int(m.m10 / m.m00);
+                    targetPoint.y = int(m.m01 / m.m00);
+                }
+            }
+            
+            float zDinamico = -1.0f; 
+            
+            if (targetFound) {
+                int roiDinamico = 20;
+                cv::Rect targetRoi(targetPoint.x - roiDinamico/2, targetPoint.y - roiDinamico/2, roiDinamico, roiDinamico);
+                float dispTarget = getMedianDisparity(rawDisp, targetRoi);
+                
+                if (dispTarget > 0.0f) {
+                    float rawZTarget = ((FOCAL_LENGTH_PX * BASELINE_M) / dispTarget) * 100.0f;
+                    zDinamico = kalmanDinamico.update(rawZTarget);
+                } else {
+                    zDinamico = kalmanDinamico.update(-1.0f);
+                }
+            } else {
+                zDinamico = kalmanDinamico.update(-1.0f);
+            }
+            
+            // ── RENDERIZADO DEL FILTRO AR ──
+            if (targetFound && zDinamico > 0.0f && zDinamico < 150.0f) { 
+                float t = std::clamp((zDinamico - 30.0f) / 120.0f, 0.0f, 1.0f);
+                int r = (int)(255 * (1.0f - t)); 
+                int g = (int)(255 * t);          
+                cv::Scalar dynamicColor(0, g, r);    
 
-                // Aspas de la mira
-                int lineLen = 15;
-                cv::line(arFrame, cv::Point(centerPoint.x - radius, centerPoint.y), 
-                         cv::Point(centerPoint.x - radius + lineLen, centerPoint.y), hudColor, 2);
-                cv::line(arFrame, cv::Point(centerPoint.x + radius, centerPoint.y), 
-                         cv::Point(centerPoint.x + radius - lineLen, centerPoint.y), hudColor, 2);
-                cv::line(arFrame, cv::Point(centerPoint.x, centerPoint.y - radius), 
-                         cv::Point(centerPoint.x, centerPoint.y - radius + lineLen), hudColor, 2);
-                cv::line(arFrame, cv::Point(centerPoint.x, centerPoint.y + radius), 
-                         cv::Point(centerPoint.x, centerPoint.y + radius - lineLen), hudColor, 2);
+                cv::drawContours(arFrame, contours, largestContourIdx, dynamicColor, 3, cv::LINE_AA);
+                cv::Rect bbox = cv::boundingRect(contours[largestContourIdx]);
+                int len = 20; 
+                
+                // Esquinas Sci-Fi
+                cv::line(arFrame, cv::Point(bbox.x, bbox.y), cv::Point(bbox.x + len, bbox.y), dynamicColor, 2);
+                cv::line(arFrame, cv::Point(bbox.x, bbox.y), cv::Point(bbox.x, bbox.y + len), dynamicColor, 2);
+                cv::line(arFrame, cv::Point(bbox.x + bbox.width, bbox.y), cv::Point(bbox.x + bbox.width - len, bbox.y), dynamicColor, 2);
+                cv::line(arFrame, cv::Point(bbox.x + bbox.width, bbox.y), cv::Point(bbox.x + bbox.width, bbox.y + len), dynamicColor, 2);
+                cv::line(arFrame, cv::Point(bbox.x, bbox.y + bbox.height), cv::Point(bbox.x + len, bbox.y + bbox.height), dynamicColor, 2);
+                cv::line(arFrame, cv::Point(bbox.x, bbox.y + bbox.height), cv::Point(bbox.x, bbox.y + bbox.height - len), dynamicColor, 2);
+                cv::line(arFrame, cv::Point(bbox.x + bbox.width, bbox.y + bbox.height), cv::Point(bbox.x + bbox.width - len, bbox.y + bbox.height), dynamicColor, 2);
+                cv::line(arFrame, cv::Point(bbox.x + bbox.width, bbox.y + bbox.height), cv::Point(bbox.x + bbox.width, bbox.y + bbox.height - len), dynamicColor, 2);
 
-                // Texto dinámico
+                cv::circle(arFrame, targetPoint, 4, dynamicColor, -1, cv::LINE_AA);
+
                 std::ostringstream distStr;
-                distStr << std::fixed << std::setprecision(1) << "TARGET LOCKED: " << stableDepthCm << " cm";
-                cv::putText(arFrame, distStr.str(), cv::Point(centerPoint.x - 90, centerPoint.y - radius - 20),
-                            cv::FONT_HERSHEY_DUPLEX, 0.5, hudColor, 1, cv::LINE_AA);
+                distStr << std::fixed << std::setprecision(1) << "Z: " << zDinamico << " cm";
+                cv::putText(arFrame, "TARGET LOCKED", cv::Point(bbox.x, bbox.y - 20), cv::FONT_HERSHEY_DUPLEX, 0.5, dynamicColor, 1, cv::LINE_AA);
+                cv::putText(arFrame, distStr.str(), cv::Point(bbox.x, bbox.y - 5), cv::FONT_HERSHEY_DUPLEX, 0.5, dynamicColor, 1, cv::LINE_AA);
             } 
             else {
-                // MODO BÚSQUEDA
-                cv::Scalar searchColor(150, 150, 150); // Gris
-                cv::circle(arFrame, centerPoint, 60, searchColor, 1, cv::LINE_AA);
-                
+                cv::Point searchCenter(arFrame.cols / 2, arFrame.rows / 2);
+                cv::Scalar searchColor(150, 150, 150); 
+                cv::circle(arFrame, searchCenter, 60, searchColor, 1, cv::LINE_AA);
                 static double angle = 0.0;
                 angle += 0.1;
-                int dx = (int)(60 * std::cos(angle));
-                int dy = (int)(60 * std::sin(angle));
-                cv::line(arFrame, centerPoint, cv::Point(centerPoint.x + dx, centerPoint.y + dy), searchColor, 1);
-
-                cv::putText(arFrame, "SEARCHING...", cv::Point(centerPoint.x - 50, centerPoint.y - 75),
-                            cv::FONT_HERSHEY_DUPLEX, 0.5, searchColor, 1, cv::LINE_AA);
+                cv::line(arFrame, searchCenter, cv::Point(searchCenter.x + (int)(60 * std::cos(angle)), searchCenter.y + (int)(60 * std::sin(angle))), searchColor, 1);
+                cv::putText(arFrame, "SEARCHING...", cv::Point(searchCenter.x - 50, searchCenter.y - 75), cv::FONT_HERSHEY_DUPLEX, 0.5, searchColor, 1, cv::LINE_AA);
             }
-
             cv::imshow("2 - Efecto Realidad Aumentada", arFrame);
 
             // 3. CONSTRUCCIÓN DE LA VISTA ESTÉREO (Una sola vez)
