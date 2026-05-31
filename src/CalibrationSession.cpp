@@ -8,11 +8,53 @@ namespace fs = std::filesystem;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-CalibrationSession::CalibrationSession(const CalibrationConfig& config)
-    : config_(config) {
+CalibrationSession::CalibrationSession(
+    const CalibrationConfig& config)
+    : config_(config)
+{
     ensureDirectories();
-    std::cout << "[Session] Output: " << fs::absolute(config_.datasetDir) << "\n";
-    std::cout << "[Session] Target: " << config_.targetPairs << " pairs\n";
+
+    scanExistingDataset();
+
+    std::cout
+        << "[Session] Output: "
+        << fs::absolute(config_.datasetDir)
+        << "\n";
+
+    std::cout
+        << "[Session] Existing pairs: "
+        << pairCount_
+        << "\n";
+
+    std::cout
+        << "[Session] Target: "
+        << config_.targetPairs
+        << " pairs\n";
+}
+
+void CalibrationSession::scanExistingDataset()
+{
+    namespace fs = std::filesystem;
+
+    pairCount_ = 0;
+
+    const std::string leftDir =
+        config_.datasetDir + "/left";
+
+    if (!fs::exists(leftDir))
+        return;
+
+    for (const auto& entry :
+         fs::directory_iterator(leftDir))
+    {
+        if (!entry.is_regular_file())
+            continue;
+
+        if (entry.path().extension() != ".jpg")
+            continue;
+
+        ++pairCount_;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

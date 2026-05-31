@@ -1,0 +1,23 @@
+%YAML:1.0
+---
+camera_name: RIGHT
+image_width: 640
+image_height: 480
+board_width: 9
+board_height: 6
+square_size_m: 0.02500000037252903
+images_used: 35
+images_total: 35
+rms_reprojection_error: 0.30165111964576913
+camera_matrix: !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [ 605.37042709686273, 0., 330.94533982136869, 0.,
+       604.87149333129742, 254.56891890135751, 0., 0., 1. ]
+distortion_coefficients: !!opencv-matrix
+   rows: 1
+   cols: 5
+   dt: d
+   data: [ 0.036961105162620682, -0.39604537089199066,
+       0.0038450116764074524, 0.0049438912359497994, 0.56792816999140949 ]
