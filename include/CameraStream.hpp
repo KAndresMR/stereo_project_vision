@@ -20,6 +20,10 @@ struct CameraStream {
         std::chrono::steady_clock::now();
 
     double fps = 0.0;
-
     int frameCount = 0;
 };
+
+inline cv::Mat grabFrame(CameraStream& cam) {
+    std::lock_guard<std::mutex> l(cam.frame_mtx);
+    return cam.frame.empty() ? cv::Mat{} : cam.frame.clone();
+}

@@ -44,14 +44,6 @@ struct CoverageTracker {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// grabFrame — thread-safe snapshot
-// ─────────────────────────────────────────────────────────────────────────────
-static cv::Mat grabFrame(CameraStream& cam) {
-    std::lock_guard<std::mutex> l(cam.frame_mtx);
-    return cam.frame.empty() ? cv::Mat{} : cam.frame.clone();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // acquireFrames
 // ─────────────────────────────────────────────────────────────────────────────
 static StereoFrames acquireFrames(CameraStream& cam1, CameraStream& cam2) {
