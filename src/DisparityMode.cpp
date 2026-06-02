@@ -146,11 +146,11 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
     int tbClaheClip  = int(params.claheClipLimit * 10.0);
     int tbPreBlur    = int(params.preBlurSigma * 10.0);
 
-    cv::createTrackbar("Disparidades (x16)", winName, &tbNumDisp,    10); // hasta 160
-    cv::createTrackbar("Tamano Bloque",      winName, &tbBlockSize,  11); // hasta 25
-    cv::createTrackbar("Unicidad (SGBM)",    winName, &tbUniqueness, 50);
-    cv::createTrackbar("Contraste (CLAHE)",  winName, &tbClaheClip,  100);
-    cv::createTrackbar("Suavizado Previo",   winName, &tbPreBlur,    30);
+    cv::createTrackbar("Disparidades", winName, &tbNumDisp,    10); // hasta 160 (tb * 16)
+    cv::createTrackbar("Bloque",       winName, &tbBlockSize,  11); // hasta 25 (tb * 2 + 3)
+    cv::createTrackbar("Unicidad",     winName, &tbUniqueness, 50);
+    cv::createTrackbar("Contraste",    winName, &tbClaheClip,  100);
+    cv::createTrackbar("Filtro",       winName, &tbPreBlur,    30);
 
     std::cout << "\n  Modo Disparidad en Vivo — Ajuste de parametros.\n";
     std::cout << "  * HAGA CLIC en cualquier panel para ampliar/minimizar.\n";
@@ -397,7 +397,7 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
             cv::rectangle(footerOverlay, footerStrip, cv::Scalar(0, 0, 40), -1); 
             cv::addWeighted(footerOverlay, 0.75, expanded, 0.25, 0, expanded);
             cv::line(expanded, {0, expanded.rows - 30}, {expanded.cols, expanded.rows - 30}, cv::Scalar(40, 40, 100), 1);
-            cv::putText(expanded, "VISTA DETALLADA | CLICK EN CUALQUIER PARTE PARA VOLVER AL DASHBOARD", 
+            cv::putText(expanded, "VISTA DETALLADA", 
                         {20, expanded.rows - 10}, cv::FONT_HERSHEY_DUPLEX, 0.4, cv::Scalar(255, 255, 255), 1, cv::LINE_AA);
 
             cv::imshow(winName, expanded);
