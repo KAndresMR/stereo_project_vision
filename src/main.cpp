@@ -126,16 +126,15 @@ static void printMenu(const PipelineStatus &st)
     std::cout << "  ┌─────────────────────────────────────────────┐\n";
     std::cout << "  │  Requires cameras                           │\n";
     std::cout << "  │                                             │\n";
-    std::cout << "  │   1. Preview                                │\n";
-    std::cout << "  │   2. Capture dataset                        │\n";
-    std::cout << "  │   5. Live rectified preview                 │\n";
-    std::cout << "  │   7. Live disparity (SGBM)                  │\n";
+    std::cout << "  │   1. Capture dataset                        │\n";
+    std::cout << "  │   4. Live rectified preview                 │\n";
+    std::cout << "  │   6. Live disparity (SGBM)                  │\n";
     std::cout << "  │                                             │\n";
     std::cout << "  │  Offline processing                         │\n";
     std::cout << "  │                                             │\n";
-    std::cout << "  │   3. Mono calibration                       │\n";
-    std::cout << "  │   4. Stereo calibration                     │\n";
-    std::cout << "  │   6. Epipolar dataset check                 │\n";
+    std::cout << "  │   2. Mono calibration                       │\n";
+    std::cout << "  │   3. Stereo calibration                     │\n";
+    std::cout << "  │   5. Epipolar dataset check                 │\n";
     std::cout << "  │                                             │\n";
     std::cout << "  │   0. Exit                                   │\n";
     std::cout << "  └─────────────────────────────────────────────┘\n";
@@ -174,47 +173,6 @@ static void waitForCameras(
     std::cout << " OK\n";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// runPreviewMode
-// ─────────────────────────────────────────────────────────────────────────────
-static void runPreviewMode(
-    CameraStream &cam1,
-    CameraStream &cam2)
-{
-    while (true)
-    {
-
-        cv::Mat f1;
-        cv::Mat f2;
-
-        {
-            std::lock_guard<std::mutex> l(cam1.frame_mtx);
-
-            if (!cam1.frame.empty())
-                f1 = cam1.frame.clone();
-        }
-
-        {
-            std::lock_guard<std::mutex> l(cam2.frame_mtx);
-
-            if (!cam2.frame.empty())
-                f2 = cam2.frame.clone();
-        }
-
-        if (!f1.empty())
-            cv::imshow("LEFT", f1);
-
-        if (!f2.empty())
-            cv::imshow("RIGHT", f2);
-
-        int key = cv::waitKey(1);
-
-        if (key == 27)
-            break;
-    }
-
-    cv::destroyAllWindows();
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // runMonoCalibration
@@ -789,17 +747,6 @@ int main()
 
             ensureCamerasRunning();
 
-            runPreviewMode(cam1, cam2);
-
-            continue;
-        }
-
-        // ────────────────────────────────────────────────────────────────
-        if (input == "2")
-        {
-
-            ensureCamerasRunning();
-
             runCalibrationMode(
                 cam1,
                 cam2,
@@ -809,7 +756,7 @@ int main()
         }
 
         // ────────────────────────────────────────────────────────────────
-        if (input == "3")
+        if (input == "2")
         {
 
             if (!st.datasetReady())
@@ -830,7 +777,7 @@ int main()
         }
 
         // ────────────────────────────────────────────────────────────────
-        if (input == "4")
+        if (input == "3")
         {
 
             if (!st.monoReady())
@@ -851,7 +798,7 @@ int main()
         }
 
         // ────────────────────────────────────────────────────────────────
-        if (input == "5")
+        if (input == "4")
         {
 
             if (!st.stereoReady())
@@ -874,7 +821,7 @@ int main()
         }
 
         // ────────────────────────────────────────────────────────────────
-        if (input == "6")
+        if (input == "5")
         {
 
             if (!st.stereoReady())
@@ -892,7 +839,7 @@ int main()
         }
 
         // ────────────────────────────────────────────────────────────────
-        if (input == "7")
+        if (input == "6")
         {
 
             if (!st.stereoReady())

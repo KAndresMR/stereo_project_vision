@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <chrono>
 #include <iostream>
+#include <limits>
 #include <string>
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -510,6 +511,7 @@ void runCalibrationMode(
 
     char choice;
     std::cin >> choice;
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
     bool appendMode =
         (choice == 'm' || choice == 'M');
@@ -530,19 +532,7 @@ void runCalibrationMode(
 
     int targetPairs = config.targetPairs;
 
-    if (appendMode)
-    {
-        targetPairs += session.pairCount();
-    }
-
-    std::cout << "\n[CalibMode] ════════════════════════════════\n";
-
-    std::cout << "[CalibMode] Target: "
-            << targetPairs
-            << " pairs\n";
-
-
-    std::cout << "\n[CalibMode] ════════════════════════════════\n";
+    std::cout << "\n[CalibMode] ════════════════════════════════════\n";
     std::cout << "[CalibMode] Board : "
               << config.boardSize.width
               << "×"
@@ -559,7 +549,7 @@ void runCalibrationMode(
 
     std::cout << "[CalibMode] SPACE = capture | ESC = exit\n";
 
-    std::cout << "[CalibMode] ════════════════════════════════\n\n";
+    std::cout << "[CalibMode] ════════════════════════════════════\n\n";
 
     using Clock = std::chrono::steady_clock;
     using Ms    = std::chrono::milliseconds;
