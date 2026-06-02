@@ -1,3 +1,0 @@
-/Users/andresmorocho/Downloads/Vision/practicas/stereo_project/build/CMakeFiles/StereoVision.dir
-/Users/andresmorocho/Downloads/Vision/practicas/stereo_project/build/CMakeFiles/edit_cache.dir
-/Users/andresmorocho/Downloads/Vision/practicas/stereo_project/build/CMakeFiles/rebuild_cache.dir
