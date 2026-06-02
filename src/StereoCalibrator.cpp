@@ -377,22 +377,14 @@ void StereoCalibrator::printSummary(const Result& result) const {
     double tx = result.T.at<double>(0) * 1000.0;
     double ty = result.T.at<double>(1) * 1000.0;
     double tz = result.T.at<double>(2) * 1000.0;
-
     cv::Mat rvec;
     cv::Rodrigues(result.R, rvec);
     double angleDeg = cv::norm(rvec) * 180.0 / CV_PI;
 
-    std::cout
-        << "\n"
-        << "  Translation T (mm):\n"
-        << "    Tx = " << std::fixed << std::setprecision(2) << tx << "\n"
-        << "    Ty = " << ty << "\n"
-        << "    Tz = " << tz << "\n"
-        << "  Baseline: " << result.baselineM * 1000.0 << " mm\n\n"
-        << "  Inter-camera rotation: " << std::setprecision(3)
-        << angleDeg << " degrees\n\n"
-        << "  RMS stereo error: " << std::setprecision(4)
-        << result.rpe << " px\n"
-        << "  Pairs used: " << result.pairsUsed
-        << " / " << result.pairsTotal << "\n\n";
+    std::cout << std::fixed << std::setprecision(2)
+        << "\n  Translation T (mm):  Tx=" << tx << "  Ty=" << ty << "  Tz=" << tz << "\n"
+        << "  Baseline           : " << result.baselineM * 1000.0 << " mm\n"
+        << "  Inter-camera rot   : " << std::setprecision(3) << angleDeg << " deg\n"
+        << "  RMS stereo error   : " << std::setprecision(4) << result.rpe << " px\n"
+        << "  Pairs used         : " << result.pairsUsed << " / " << result.pairsTotal << "\n\n";
 }

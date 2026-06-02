@@ -353,42 +353,24 @@ bool MonoCalibrator::saveYAML(const Result& result, Side side) const {
 // printSummary
 // ─────────────────────────────────────────────────────────────────────────────
 void MonoCalibrator::printSummary(const Result& result, Side side) const {
-
     if (!result.success) return;
 
     const cv::Mat& K = result.cameraMatrix;
     const cv::Mat& D = result.distCoeffs;
-
-    double fx = K.at<double>(0, 0);
-    double fy = K.at<double>(1, 1);
-    double cx = K.at<double>(0, 2);
-    double cy = K.at<double>(1, 2);
+    double fx = K.at<double>(0,0), fy = K.at<double>(1,1);
+    double cx = K.at<double>(0,2), cy = K.at<double>(1,2);
 
     Log::separator("Result — " + sideName(side));
-
-    std::cout
-        << "\n"
-        << "  Camera matrix K:\n"
-        << "    | " << std::fixed << std::setprecision(2)
-        << std::setw(8) << fx  << "   0.00  "
-        << std::setw(8) << cx  << " |\n"
-        << "    |    0.00  "
-        << std::setw(8) << fy  << "  "
-        << std::setw(8) << cy  << " |\n"
-        << "    |    0.00     0.00     1.00 |\n\n";
-
-    std::cout
-        << "  Distortion coefficients [k1, k2, p1, p2, k3]:\n  [ ";
+    std::cout << std::fixed << std::setprecision(2)
+        << "\n  Camera matrix K:\n"
+        << "    | " << std::setw(8) << fx << "   0.00  " << std::setw(8) << cx << " |\n"
+        << "    |    0.00  "          << std::setw(8) << fy << "  " << std::setw(8) << cy << " |\n"
+        << "    |    0.00     0.00     1.00 |\n\n"
+        << "  Distortion [k1 k2 p1 p2 k3]:  [ ";
     for (int i = 0; i < D.cols; ++i)
-        std::cout << std::setw(9) << std::fixed << std::setprecision(5)
-                  << D.at<double>(i) << " ";
-    std::cout << "]\n\n";
-
-    std::cout
-        << "  RMS reprojection error : " << std::fixed << std::setprecision(4)
-        << result.rpe << " px\n"
-        << "  Images used            : " << result.imagesUsed
-        << " / " << result.imagesTotal << "\n"
-        << "  Image size             : " << result.imageSize.width
-        << "×" << result.imageSize.height << "\n\n";
+        std::cout << std::setw(9) << std::setprecision(5) << D.at<double>(i) << " ";
+    std::cout << "]\n\n"
+        << "  RMS  : " << std::setprecision(4) << result.rpe << " px\n"
+        << "  Used : " << result.imagesUsed << " / " << result.imagesTotal << "\n"
+        << "  Size : " << result.imageSize.width << "x" << result.imageSize.height << "\n\n";
 }

@@ -229,8 +229,6 @@ void Rectifier::previewDataset() const {
         return;
     }
 
-    
-
     std::vector<std::string> leftPaths, rightPaths;
     cv::glob(config_.datasetDir + "/left/*.jpg",  leftPaths,  false);
     cv::glob(config_.datasetDir + "/right/*.jpg", rightPaths, false);
@@ -272,8 +270,6 @@ void Rectifier::previewDataset() const {
         int key = cv::waitKey(0);
         if (key == 27) break;  // ESC
     }
-
-    
 
     cv::destroyWindow("Epipolar Check");
 }
