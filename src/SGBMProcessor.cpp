@@ -47,7 +47,9 @@ void SGBMProcessor::init() {
 
     // CLAHE for pre-processing: improves SGBM on low-contrast scenes.
     // clip=2.0, tile=8×8 is a conservative setting — reduces halos.
-    clahe_ = cv::createCLAHE(5.0, cv::Size(8, 8)); // Un Clip Limit de 2.0 es conservador y funciona genial con luz de día. En un cuarto oscuro con una cámara económica, 2.0 no hace casi nada.
+    // CLAHE: clip=5.0, tile=8×8. Conservative setting — reduces halos.
+    // Increase clip limit for low-light / cheap sensors (OV2640 in a dark room).
+    clahe_ = cv::createCLAHE(5.0, cv::Size(8, 8));
 
     // Reset temporal buffer (params may have changed window size)
     smoothed_      = cv::Mat{};
@@ -88,25 +90,18 @@ cv::Mat SGBMProcessor::compute(const cv::Mat& rectLeft, const cv::Mat& rectRight
         grayR = rectRight;
     }
 
-    // CLAHE — equalizes contrast locally per tile.
-    // Helps SGBM find matches in dark or overexposed regions.
-    // Actualizar CLAHE con los parámetros en vivo
     clahe_->setClipLimit(params_.claheClipLimit);
-    
-    // Evitar que el Tile Size sea 0 o negativo
-    int ts = std::max(2, params_.claheTileSize);
-    clahe_->setTilesGridSize(cv::Size(ts, ts));
+    clahe_->setTilesGridSize(cv::Size(std::max(2, params_.claheTileSize),
+                                      std::max(2, params_.claheTileSize)));
 
     cv::Mat enhL, enhR;
-    if(params_.preBlurSigma > 0.1){
-        cv::GaussianBlur(grayL, grayL, cv::Size(3, 3), params_.preBlurSigma);
-        cv::GaussianBlur(grayR, grayR, cv::Size(3, 3), params_.preBlurSigma);
+    if (params_.preBlurSigma > 0.1) {
+        cv::GaussianBlur(grayL, grayL, cv::Size(3,3), params_.preBlurSigma);
+        cv::GaussianBlur(grayR, grayR, cv::Size(3,3), params_.preBlurSigma);
     }
     clahe_->apply(grayL, enhL);
     clahe_->apply(grayR, enhR);
-
-    // [!] NUEVO: Guardamos la imagen mejorada para usarla como guía y en el dashboard
-    enhancedL_ = enhL.clone();
+    enhancedL_ = enhL.clone(); // saved for WLS guide and dashboard display
 
     // Left disparity (primary output)
     cv::Mat leftDisp;
@@ -222,18 +217,13 @@ cv::Mat SGBMProcessor::visualize(const cv::Mat& disparity) const {
     // Clip negatives (invalid regions)
     cv::threshold(disp32f, disp32f, 0.0, 0.0, cv::THRESH_TOZERO);
 
-    // Normalize to 0–255
+    // Normalize to 0–255 and apply greyscale (TURBO colormap available via applyColorMap)
     double maxDisp = params_.numDisparities;
     cv::Mat disp8u;
     disp32f.convertTo(disp8u, CV_8U, 255.0 / maxDisp);
 
-    // Apply color map
-    //cv::Mat colored;
-    //cv::applyColorMap(disp8u, colored, cv::COLORMAP_TURBO);
-
     // Black out invalid pixels
     cv::Mat invalid = (disparity <= params_.minDisparity * 16);
-    //colored.setTo(cv::Scalar(0, 0, 0), invalid);
     disp8u.setTo(0, invalid);
 
     return disp8u;
@@ -273,14 +263,8 @@ cv::Mat SGBMProcessor::toDepth(const cv::Mat& disparity,
                          (depthM < params_.maxDepthM);
     cv::Mat valid = validDisp & validDepth;
 
-    static int counter = 0;
-
-    if (++counter % 30 == 0) {
-        std::cout << depthM.at<float>(240,320) << std::endl;
-    }
     // Zero out invalid pixels
     depthM.setTo(0.0f, ~valid);
-
     return depthM;  // CV_32F, meters
 }
 
