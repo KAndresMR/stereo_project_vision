@@ -340,7 +340,16 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
         cv::Mat fullT0 = claheView;
         cv::Mat fullT1 = rawVis;
         cv::Mat fullT2 = wlsVis;
-        cv::Mat fullT3 = temporalVis.empty() ? cv::Mat::zeros(rL.size(), CV_8UC3) : temporalVis;
+        cv::Mat fullT3 = temporalVis.empty() ? cv::Mat::zeros(rL.size(), CV_8UC3) : temporalVis.clone();
+        if (!temporalVis.empty()) {
+            std::vector<std::string> paramInfo = {
+                "Parametros SGBM:",
+                "Disparidad: " + std::to_string(params.numDisparities) + " px",
+                "Bloque: " + std::to_string(params.blockSize) + "x" + std::to_string(params.blockSize),
+                "Unicidad: " + std::to_string(params.uniquenessRatio)
+            };
+            drawHUDTextBox(fullT3, paramInfo, {15, fullT3.rows - 95}, cv::Scalar(180, 255, 50));
+        }
         cv::Mat fullT4 = fixedDepthView;
         cv::Mat fullT5 = arView;
 
