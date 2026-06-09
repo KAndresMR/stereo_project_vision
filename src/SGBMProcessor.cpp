@@ -17,8 +17,13 @@ void SGBMProcessor::init() {
     const int ch = 1;
     const int bs = params_.blockSize;
 
-    int p1 = (params_.P1 > 0) ? params_.P1 : 1200;
-    int p2 = (params_.P2 > 0) ? params_.P2 : 5000;
+    int p1 = params_.P1;
+    int p2 = params_.P2;
+    if (p1 == 0 || p2 == 0) {
+        // Fórmula matemática de OpenCV para penalización dinámica
+        p1 = 8 * 1 * params_.blockSize * params_.blockSize;
+        p2 = 32 * 1 * params_.blockSize * params_.blockSize;
+    }
 
     leftMatcher_ = cv::StereoSGBM::create(
         params_.minDisparity,
@@ -45,11 +50,8 @@ void SGBMProcessor::init() {
                   " σ=" + std::to_string(params_.wlsSigma) + ")");
     }
 
-    // CLAHE for pre-processing: improves SGBM on low-contrast scenes.
-    // clip=2.0, tile=8×8 is a conservative setting — reduces halos.
-    // CLAHE: clip=5.0, tile=8×8. Conservative setting — reduces halos.
-    // Increase clip limit for low-light / cheap sensors (OV2640 in a dark room).
-    clahe_ = cv::createCLAHE(5.0, cv::Size(8, 8));
+    // CLAHE for pre-processing: improves SGBM on low-contrast scenes.×8 is a conservative setting — reduces halos.
+    clahe_ = cv::createCLAHE();
 
     // Reset temporal buffer (params may have changed window size)
     smoothed_      = cv::Mat{};
@@ -222,11 +224,17 @@ cv::Mat SGBMProcessor::visualize(const cv::Mat& disparity) const {
     cv::Mat disp8u;
     disp32f.convertTo(disp8u, CV_8U, 255.0 / maxDisp);
 
-    // Black out invalid pixels
+    // Black out invalid pixels BEFORE color mapping to ensure they don't get mapped to a color
     cv::Mat invalid = (disparity <= params_.minDisparity * 16);
     disp8u.setTo(0, invalid);
 
-    return disp8u;
+    cv::Mat colored;
+    cv::applyColorMap(disp8u, colored, cv::COLORMAP_TURBO);
+    
+    // Black out invalid pixels again on the colored image (applyColorMap turns 0 into dark blue usually)
+    colored.setTo(cv::Scalar(0, 0, 0), invalid);
+
+    return colored;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

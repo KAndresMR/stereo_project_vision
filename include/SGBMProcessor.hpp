@@ -31,7 +31,7 @@ public:
 
     struct Params {
         // ── SGBM ─────────────────────────────────────────────────────────────
-        int minDisparity     = 0;
+        int minDisparity     = 16;
         int numDisparities   = 96;   // must be % 16 == 0
         int blockSize        = 5;   // must be odd
 
@@ -40,21 +40,21 @@ public:
         int P2               = 0;
 
         int disp12MaxDiff    = 1;
-        int preFilterCap     = 31;
+        int preFilterCap     = 63; // Defecto 31
         int uniquenessRatio  = 15;
         int speckleWindowSize = 150;
         int speckleRange     = 2;
-        int mode             = cv::StereoSGBM::MODE_SGBM; // Probar MODE_SGBM
+        int mode             = cv::StereoSGBM::MODE_SGBM_3WAY; // Probar MODE_SGBM
 
         // ── WLS filter ────────────────────────────────────────────────────────
         bool   useWLS    = true;
-        double wlsLambda = 3000.0;
-        double wlsSigma  = 1.5;
+        double wlsLambda = 8000.0;
+        double wlsSigma  = 1.0;
 
         // ── Temporal smoothing ────────────────────────────────────────────────
         bool  useTemporalSmoothing = true;
         int   temporalWindow       = 4;    // frames to blend
-        float temporalAlpha        = 0.4f; // EMA weight [0=frozen, 1=no smoothing]
+        float temporalAlpha        = 0.6f; // EMA weight [0=frozen, 1=no smoothing]
 
         // ── Depth output ──────────────────────────────────────────────────────
         float minDepthM = 0.10f;

@@ -111,8 +111,8 @@ int main() {
     auto ensureCams = [&]() {
         if (camerasRunning) return;
         std::cout << "\n  Starting camera streams...\n";
-        t1 = std::thread(streamCamera, "http://192.168.18.111:81/stream", std::ref(cam1));
-        t2 = std::thread(streamCamera, "http://192.168.18.112:81/stream", std::ref(cam2));
+        t1 = std::thread(streamCamera, "http://192.168.1.4:81/stream", std::ref(cam1)); 
+        t2 = std::thread(streamCamera, "http://192.168.1.5:81/stream", std::ref(cam2));
         waitForCameras(cam1, cam2);
         camerasRunning = true;
     };

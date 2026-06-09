@@ -124,9 +124,10 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
 
     // ── SGBM initial params ───────────────────────────────────────────────────
     SGBMProcessor::Params params;
-    params.numDisparities    = 64;
-    params.blockSize         = 7;
-    params.uniquenessRatio   = 10;
+    params.numDisparities    = 64;por 
+    params.blockSize         = 9;    // slider Bloque = 3
+    params.uniquenessRatio   = 15;
+    params.claheClipLimit    = 2.5;  // slider Contraste = 25
     params.speckleWindowSize = 100;
     params.speckleRange      = 2;
     SGBMProcessor sgbm(params);
@@ -139,30 +140,38 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
     DashboardState state;
     cv::setMouseCallback(winName, onDashboardMouse, &state);
 
-    // ── Trackbars (5 key controls) ────────────────────────────────────────────
+    // ── Trackbars (9 key controls in pipeline order) ──────────────────────────
+    int tbClaheClip  = int(params.claheClipLimit * 10.0);
+    int tbPreBlur    = int(params.preBlurSigma * 10.0);
     int tbNumDisp    = params.numDisparities / 16;
     int tbBlockSize  = (params.blockSize - 3) / 2;
     int tbUniqueness = params.uniquenessRatio;
-    int tbClaheClip  = int(params.claheClipLimit * 10.0);
-    int tbPreBlur    = int(params.preBlurSigma * 10.0);
+    int tbSpeckle    = params.speckleWindowSize;
+    int tbWlsLambda  = int(params.wlsLambda / 500.0); // 1 to 40 (500 to 20000)
+    int tbWlsSigma   = int(params.wlsSigma * 10.0);   // 5 to 25 (0.5 to 2.5)
+    int tbTemporal   = int(params.temporalAlpha * 10.0); // 0 to 10
 
+    cv::createTrackbar("Contraste",    winName, &tbClaheClip,  100);
+    cv::createTrackbar("Filtro",       winName, &tbPreBlur,    30);
     cv::createTrackbar("Disparidades", winName, &tbNumDisp,    10); // hasta 160 (tb * 16)
     cv::createTrackbar("Bloque",       winName, &tbBlockSize,  11); // hasta 25 (tb * 2 + 3)
     cv::createTrackbar("Unicidad",     winName, &tbUniqueness, 50);
-    cv::createTrackbar("Contraste",    winName, &tbClaheClip,  100);
-    cv::createTrackbar("Filtro",       winName, &tbPreBlur,    30);
+    cv::createTrackbar("Speckle",      winName, &tbSpeckle,    250);
+    cv::createTrackbar("WLS Lambda",   winName, &tbWlsLambda,  40);
+    cv::createTrackbar("WLS Sigma",    winName, &tbWlsSigma,   30);
+    cv::createTrackbar("Temporal",     winName, &tbTemporal,   10);
 
     std::cout << "\n  Modo Disparidad en Vivo — Ajuste de parametros.\n";
     std::cout << "  * HAGA CLIC en cualquier panel para ampliar/minimizar.\n";
     std::cout << "  * ESC = Volver al Menu.\n\n";
 
-    // ── Kalman filters ────────────────────────────────────────────────────────
-    Kalman1D kalmanFijo(1e-3f, 0.1f);
-    Kalman1D kalmanDinamico(1e-3f, 0.1f);
+    // Kalman1D(processNoise, measurementNoise)
+    Kalman1D kalmanFijo(0.01f, 9.0f);       // Q pequeño → suaviza; R=9 → σ=3cm
+    Kalman1D kalmanDinamico(0.1f, 9.0f);    // Q más alto → sigue movimiento
 
     // Physical constants
-    const float FOCAL_PX   = 600.0f;
-    const float BASELINE_M = 0.07414f;
+    const float FOCAL_PX   = 614.76f;   
+    const float BASELINE_M = 0.07639f;
 
     SGBMProcessor::Params lastParams = params;
     
@@ -171,17 +180,25 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
 
     while (true) {
         // ── Read trackbars → update params ────────────────────────────────────
+        params.claheClipLimit    = std::max(0.1, tbClaheClip / 10.0);
+        params.preBlurSigma      = tbPreBlur / 10.0;
         params.numDisparities    = std::max(16, tbNumDisp * 16);
         params.blockSize         = tbBlockSize * 2 + 3;
         params.uniquenessRatio   = tbUniqueness;
-        params.claheClipLimit    = std::max(0.1, tbClaheClip / 10.0);
-        params.preBlurSigma      = tbPreBlur / 10.0;
+        params.speckleWindowSize = tbSpeckle;
+        params.wlsLambda         = std::max(1.0, tbWlsLambda * 500.0);
+        params.wlsSigma          = std::max(0.1, tbWlsSigma / 10.0);
+        params.temporalAlpha     = std::clamp(tbTemporal / 10.0, 0.0, 1.0);
 
-        if (params.numDisparities != lastParams.numDisparities ||
+        if (params.claheClipLimit != lastParams.claheClipLimit   ||
+            params.preBlurSigma   != lastParams.preBlurSigma     ||
+            params.numDisparities != lastParams.numDisparities   ||
             params.blockSize      != lastParams.blockSize        ||
-            params.uniquenessRatio  != lastParams.uniquenessRatio  ||
-            params.claheClipLimit != lastParams.claheClipLimit   ||
-            params.preBlurSigma   != lastParams.preBlurSigma) {
+            params.uniquenessRatio!= lastParams.uniquenessRatio  ||
+            params.speckleWindowSize != lastParams.speckleWindowSize ||
+            params.wlsLambda      != lastParams.wlsLambda        ||
+            params.wlsSigma       != lastParams.wlsSigma         ||
+            params.temporalAlpha  != lastParams.temporalAlpha) {
             sgbm.setParams(params);
             lastParams = params;
             Log::info("DisparityMode", "Parametros SGBM actualizados");
@@ -205,62 +222,29 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
             temporalVis = sgbm.visualize(temporalDisp);
         }
 
-        // ── Fixed center depth measurement HUD ────────────────────────
-        cv::Mat fixedDepthView = rL.clone();
-        {
-            cv::Point centre  = {fixedDepthView.cols / 2, fixedDepthView.rows / 2};
-            cv::Rect  roiRect = {centre.x - 15, centre.y - 15, 30, 30};
-            float disp        = getMedianDisparity(rawDisp, roiRect);
-            float z           = -1.0f;
-            
-            if (disp > 0.0f) {
-                z = kalmanFijo.update((FOCAL_PX * BASELINE_M / disp) * 100.0f);
-            } else {
-                kalmanFijo.update(-1.0f);
-            }
-
-            bool validZ = (z > 0.0f && z < 400.0f);
-            cv::Scalar color = validZ ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255); // verde / rojo
-
-            // Draw Crosshair
-            cv::circle(fixedDepthView, centre, 6, color, 1, cv::LINE_AA);
-            cv::circle(fixedDepthView, centre, 20, color, 1, cv::LINE_AA);
-            cv::circle(fixedDepthView, centre, 1, color, -1, cv::LINE_AA);
-            cv::line(fixedDepthView, {centre.x - 30, centre.y}, {centre.x - 10, centre.y}, color, 1);
-            cv::line(fixedDepthView, {centre.x + 10, centre.y}, {centre.x + 30, centre.y}, color, 1);
-            cv::line(fixedDepthView, {centre.x, centre.y - 30}, {centre.x, centre.y - 10}, color, 1);
-            cv::line(fixedDepthView, {centre.x, centre.y + 10}, {centre.x, centre.y + 30}, color, 1);
-
-            // Text box
-            std::vector<std::string> lines;
-            if (validZ) {
-                std::ostringstream sz, sd;
-                sz << std::fixed << std::setprecision(1) << "Z: " << z << " cm";
-                sd << std::fixed << std::setprecision(1) << "Disp: " << disp << " px";
-                lines.push_back(sz.str());
-                lines.push_back(sd.str());
-                lines.push_back("Estado: Fijado");
-            } else {
-                lines.push_back("Z: Fuera de rango");
-                lines.push_back("Estado: Buscando");
-            }
-            drawHUDTextBox(fixedDepthView, lines, {15, 45}, color);
-        }
-
         // ── AR dynamic target tracker HUD ─────────────────────────────
         cv::Mat arView = rL.clone();
+        cv::Point targetPoint = {arView.cols / 2, arView.rows / 2};
+        bool targetFound      = false;
+        float zDyn            = -1.0f;
         {
             double minD, maxD;
             cv::minMaxLoc(temporalDisp, &minD, &maxD);
 
-            cv::Point targetPoint = {arView.cols / 2, arView.rows / 2};
-            bool targetFound      = false;
             std::vector<std::vector<cv::Point>> contours;
             int largestIdx = -1;
 
-            if (maxD > 16.0) {
-                cv::Mat mask = (temporalDisp > (maxD - 80));
+            // ── Constante física: solo detectar objetos a menos de 150 cm ────────────
+            // d_threshold_16S = f * B / Z_max * 16
+            const int DISP_MIN_FOR_DETECTION = (int)((FOCAL_PX * BASELINE_M / 1.50) * 16.0); // ≈ 503 para 150 cm
+
+            // Si ningún píxel supera el umbral absoluto → no hay objeto cercano
+            if (maxD > DISP_MIN_FOR_DETECTION) {
+                // Threshold: el mayor entre el absoluto y el relativo
+                double finalThresh = std::max((double)DISP_MIN_FOR_DETECTION, maxD - 80.0);
+                cv::Mat mask = (temporalDisp > (int)finalThresh);
                 mask.convertTo(mask, CV_8U, 1);
+                
                 cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, {9,9});
                 cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel);
                 cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -280,7 +264,6 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
                 }
             }
 
-            float zDyn = -1.0f;
             if (targetFound) {
                 cv::Rect tr = {targetPoint.x - 15, targetPoint.y - 15, 30, 30};
                 float d = getMedianDisparity(rawDisp, tr);
@@ -324,6 +307,7 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
                 cv::circle(arView, sc, 25, radarColor, 1, cv::LINE_AA);
                 cv::circle(arView, sc, 2, radarColor, -1, cv::LINE_AA);
                 
+                static double radarAngle = 0.0;
                 radarAngle += 0.15;
                 cv::Point radarEdge = {
                     sc.x + int(50 * std::cos(radarAngle)),
@@ -336,19 +320,77 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
             }
         }
 
+        // ── Panel 05: medir en el objeto detectado, no en el centro fijo ─────────
+        cv::Mat fixedDepthView = rL.clone();
+        {
+            cv::Point measurePoint = {fixedDepthView.cols / 2, fixedDepthView.rows / 2};
+            bool hasDynamicTarget = (targetFound && zDyn > 0.0f);
+
+            if (hasDynamicTarget) {
+                measurePoint = targetPoint;  // apunta donde está el objeto real
+            }
+
+            cv::Rect roiRect = {
+                std::clamp(measurePoint.x - 20, 0, temporalDisp.cols - 41),
+                std::clamp(measurePoint.y - 20, 0, temporalDisp.rows - 41),
+                40, 40
+            };
+
+            float disp = getMedianDisparity(rawDisp, roiRect);  // usar temporalDisp
+            float z    = -1.0f;
+
+            if (disp > 0.0f) {
+                z = kalmanFijo.update((FOCAL_PX * BASELINE_M / disp) * 100.0f);
+            } else {
+                kalmanFijo.update(-1.0f);
+            }
+
+            bool validZ = (z > 0.0f && z < 400.0f);
+            cv::Scalar color = validZ ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255); // verde / rojo
+
+            // Draw simple point
+            cv::circle(fixedDepthView, measurePoint, 4, color, -1, cv::LINE_AA);
+            // Draw a subtle larger circle to indicate the ROI area
+            cv::circle(fixedDepthView, measurePoint, 20, color, 1, cv::LINE_AA);
+
+            // Text box
+            std::vector<std::string> lines;
+            if (validZ) {
+                std::ostringstream sz, sd;
+                sz << std::fixed << std::setprecision(1) << "Z: " << z << " cm";
+                sd << std::fixed << std::setprecision(1) << "Disp: " << disp << " px";
+                lines.push_back(sz.str());
+                lines.push_back(sd.str());
+                lines.push_back(hasDynamicTarget ? "Estado: Tracking Obj" : "Estado: Fijado");
+            } else {
+                lines.push_back("Z: Fuera de rango");
+                lines.push_back("Estado: Buscando");
+            }
+            drawHUDTextBox(fixedDepthView, lines, {15, 45}, color);
+        }
+
         // ── Render display outputs (Ordered precisely by flow) ────────────────
         cv::Mat fullT0 = claheView;
         cv::Mat fullT1 = rawVis;
         cv::Mat fullT2 = wlsVis;
         cv::Mat fullT3 = temporalVis.empty() ? cv::Mat::zeros(rL.size(), CV_8UC3) : temporalVis.clone();
         if (!temporalVis.empty()) {
+            std::ostringstream lStr, sStr, tStr;
+            lStr << std::fixed << std::setprecision(0) << params.wlsLambda;
+            sStr << std::fixed << std::setprecision(1) << params.wlsSigma;
+            tStr << std::fixed << std::setprecision(1) << params.temporalAlpha;
+            
             std::vector<std::string> paramInfo = {
                 "Parametros SGBM:",
                 "Disparidad: " + std::to_string(params.numDisparities) + " px",
-                "Bloque: " + std::to_string(params.blockSize) + "x" + std::to_string(params.blockSize),
-                "Unicidad: " + std::to_string(params.uniquenessRatio)
+                "Bloque: "     + std::to_string(params.blockSize) + "x" + std::to_string(params.blockSize),
+                "Unicidad: "   + std::to_string(params.uniquenessRatio),
+                "Speckle: "    + std::to_string(params.speckleWindowSize),
+                "WLS Lambda: " + lStr.str(),
+                "WLS Sigma: "  + sStr.str(),
+                "Temporal: "   + tStr.str()
             };
-            drawHUDTextBox(fullT3, paramInfo, {15, fullT3.rows - 95}, cv::Scalar(180, 255, 50));
+            drawHUDTextBox(fullT3, paramInfo, {15, fullT3.rows - 165}, cv::Scalar(180, 255, 50));
         }
         cv::Mat fullT4 = fixedDepthView;
         cv::Mat fullT5 = arView;

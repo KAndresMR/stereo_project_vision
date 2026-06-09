@@ -142,23 +142,8 @@ static void drawHUD(cv::Mat& frame, bool bothValid, int done, int target, double
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// drawCoverageOverlay
+// (Coverage Overlay Removed per user request to clean UI)
 // ─────────────────────────────────────────────────────────────────────────────
-static void drawCoverageOverlay(cv::Mat& frame, const CoverageTracker& c) {
-    auto mk = [](bool ok) -> std::string { return ok ? "[✓] " : "[ ] "; };
-    const std::vector<std::string> lines = {
-        "Coverage:",
-        mk(c.center)+"Center", mk(c.top)+"Top",    mk(c.bottom)+"Bottom",
-        mk(c.left)  +"Left",   mk(c.right)+"Right",
-        "",
-        mk(c.near)+"Near", mk(c.mid)+"Medium", mk(c.far)+"Far",
-        "",
-        mk(c.flat)+"Flat", mk(c.tiltLeft)+"Tilt Left", mk(c.tiltRight)+"Tilt Right",
-    };
-    for (size_t i = 0; i < lines.size(); ++i)
-        cv::putText(frame, lines[i], {10, 110 + (int)i*18},
-                    cv::FONT_HERSHEY_SIMPLEX, 0.5, {255,255,255}, 1);
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // renderCalibrationUI
@@ -170,7 +155,7 @@ static cv::Mat renderCalibrationUI(StereoFrames& f, const StereoDetection& det,
                                    CoverageTracker& cov) {
     drawHUD(f.dispLeft,  det.bothValid, session.pairCount(), config.targetPairs, cam1.fps);
     drawHUD(f.dispRight, det.bothValid, session.pairCount(), config.targetPairs, cam2.fps);
-    drawCoverageOverlay(f.dispLeft, cov);
+    // Coverage overlay removed to keep UI clean
 
     cv::Mat combined;
     cv::hconcat(f.dispLeft, f.dispRight, combined);
