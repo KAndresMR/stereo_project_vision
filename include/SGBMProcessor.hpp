@@ -33,7 +33,7 @@ public:
         // ── SGBM ─────────────────────────────────────────────────────────────
         int minDisparity     = 16;
         int numDisparities   = 96;   // must be % 16 == 0
-        int blockSize        = 5;   // must be odd
+        int blockSize        = 9;   // must be odd
 
         // Smoothness penalties. 0 → auto-computed from blockSize.
         int P1               = 0;
@@ -61,7 +61,7 @@ public:
         float maxDepthM = 5.00f;
 
         // ── Preprocesamiento CLAHE ──────────────────────────────────────────
-        double claheClipLimit = 4.0;
+        double claheClipLimit = 2.5;
         int claheTileSize = 8;
 
         // ── Preprocesamiento Gaussian Blur ──────────────────────────────────────────

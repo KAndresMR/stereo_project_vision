@@ -124,10 +124,7 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
 
     // ── SGBM initial params ───────────────────────────────────────────────────
     SGBMProcessor::Params params;
-    params.numDisparities    = 64;por 
-    params.blockSize         = 9;    // slider Bloque = 3
-    params.uniquenessRatio   = 15;
-    params.claheClipLimit    = 2.5;  // slider Contraste = 25
+    params.numDisparities    = 64;
     params.speckleWindowSize = 100;
     params.speckleRange      = 2;
     SGBMProcessor sgbm(params);
