@@ -175,6 +175,10 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
     // Radar sweep angle
     double radarAngle = 0.0;
 
+    int frameCount = 0;
+    auto timeStart = cv::getTickCount();
+    float currentFps = 0.0f;
+
     while (true) {
         // ── Read trackbars → update params ────────────────────────────────────
         params.claheClipLimit    = std::max(0.1, tbClaheClip / 10.0);
@@ -205,6 +209,13 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
         cv::Mat f1 = grabFrame(cam1);
         cv::Mat f2 = grabFrame(cam2);
         if (f1.empty() || f2.empty()) { cv::waitKey(1); continue; }
+
+        frameCount++;
+        if (frameCount % 10 == 0) {
+            auto timeNow = cv::getTickCount();
+            currentFps = 10.0f / ((timeNow - timeStart) / cv::getTickFrequency());
+            timeStart = timeNow;
+        }
 
         // ── SGBM pipeline ─────────────────────────────────────────────────────
         auto [rL, rR]        = rectifier.rectify(f1, f2);
@@ -317,23 +328,18 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
             }
         }
 
-        // ── Panel 05: medir en el objeto detectado, no en el centro fijo ─────────
+        // ── Panel 05: Medicion de Profundidad Fija (Centroide) ─────────
         cv::Mat fixedDepthView = rL.clone();
         {
             cv::Point measurePoint = {fixedDepthView.cols / 2, fixedDepthView.rows / 2};
-            bool hasDynamicTarget = (targetFound && zDyn > 0.0f);
-
-            if (hasDynamicTarget) {
-                measurePoint = targetPoint;  // apunta donde está el objeto real
-            }
 
             cv::Rect roiRect = {
-                std::clamp(measurePoint.x - 20, 0, temporalDisp.cols - 41),
-                std::clamp(measurePoint.y - 20, 0, temporalDisp.rows - 41),
-                40, 40
+                std::clamp(measurePoint.x - 3, 0, temporalDisp.cols - 7),
+                std::clamp(measurePoint.y - 3, 0, temporalDisp.rows - 7),
+                7, 7
             };
 
-            float disp = getMedianDisparity(rawDisp, roiRect);  // usar temporalDisp
+            float disp = getMedianDisparity(temporalDisp, roiRect); 
             float z    = -1.0f;
 
             if (disp > 0.0f) {
@@ -345,23 +351,24 @@ void runLiveDisparity(CameraStream& cam1, CameraStream& cam2,
             bool validZ = (z > 0.0f && z < 400.0f);
             cv::Scalar color = validZ ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255); // verde / rojo
 
-            // Draw simple point
+            // Draw center dot ONLY
             cv::circle(fixedDepthView, measurePoint, 4, color, -1, cv::LINE_AA);
-            // Draw a subtle larger circle to indicate the ROI area
-            cv::circle(fixedDepthView, measurePoint, 20, color, 1, cv::LINE_AA);
 
             // Text box
             std::vector<std::string> lines;
             if (validZ) {
-                std::ostringstream sz, sd;
+                std::ostringstream sz, sd, sfps;
                 sz << std::fixed << std::setprecision(1) << "Z: " << z << " cm";
                 sd << std::fixed << std::setprecision(1) << "Disp: " << disp << " px";
+                sfps << std::fixed << std::setprecision(1) << "FPS: " << currentFps;
                 lines.push_back(sz.str());
                 lines.push_back(sd.str());
-                lines.push_back(hasDynamicTarget ? "Estado: Tracking Obj" : "Estado: Fijado");
+                lines.push_back(sfps.str());
             } else {
                 lines.push_back("Z: Fuera de rango");
-                lines.push_back("Estado: Buscando");
+                std::ostringstream sfps;
+                sfps << std::fixed << std::setprecision(1) << "FPS: " << currentFps;
+                lines.push_back(sfps.str());
             }
             drawHUDTextBox(fixedDepthView, lines, {15, 45}, color);
         }

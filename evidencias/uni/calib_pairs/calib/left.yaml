@@ -1,0 +1,24 @@
+%YAML:1.0
+---
+camera_name: LEFT
+image_width: 640
+image_height: 480
+board_width: 9
+board_height: 6
+square_size_m: 0.02500000037252903
+images_used: 30
+images_total: 30
+rms_reprojection_error: 0.3347661582694475
+camera_matrix: !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [ 594.02258214586914, 0., 316.84883284596827, 0.,
+       593.60636215211412, 240.11317812373062, 0., 0., 1. ]
+distortion_coefficients: !!opencv-matrix
+   rows: 1
+   cols: 5
+   dt: d
+   data: [ 0.0057206694145558422, -0.27457517809366278,
+       -0.006322515613259856, -0.0020365965388794084,
+       0.23390447736503811 ]
