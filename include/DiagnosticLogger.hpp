@@ -7,22 +7,22 @@
 #include <unordered_map>
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Log — strategic diagnostic logger
+// Log — logger de diagnóstico estratégico
 //
-// Design rules:
-//   - Tag every message with [LEVEL][TAG] so you can grep specific subsystems
-//   - Throttle repetitive messages (detection failures) to avoid console spam
-//   - Never log per-frame unless something changed or a threshold was crossed
-//   - Timestamps are relative to program start (easier to read than wall clock)
+// Reglas de diseño:
+//   - Etiquetar cada mensaje con [NIVEL][TAG] para poder filtrar con grep
+//   - Limitar la frecuencia de mensajes repetitivos (fallos de detección) para evitar spam
+//   - Nunca registrar log en cada frame a menos que algo haya cambiado o superado un umbral
+//   - Las marcas de tiempo son relativas al inicio del programa
 //
-// Usage:
-//   Log::info("Detector", "Corners found on LEFT camera");
-//   Log::warn("Session",  "Skipping duplicate capture (cooldown active)");
-//   Log::detection("LEFT", found, brightness, claheUsed);
+// Uso:
+//   Log::info("Detector", "Esquinas encontradas en cámara IZQUIERDA");
+//   Log::warn("Session",  "Omitiendo captura duplicada (cooldown activo)");
+//   Log::detection("IZQ", found, brightness, claheUsed);
 // ─────────────────────────────────────────────────────────────────────────────
 namespace Log {
 
-// ── Internal helpers (not part of the public API) ───────────────────────────
+// ── Funciones auxiliares internas (no son parte de la API pública) ───────────
 namespace detail {
 
 inline std::string timestamp() {
@@ -34,8 +34,8 @@ inline std::string timestamp() {
     return ss.str();
 }
 
-// Returns true if enough time has passed since last call for this key.
-// Used to throttle repetitive warnings (e.g. "too dark" every frame).
+// Retorna true si ha pasado suficiente tiempo desde la última llamada para esta llave.
+// Usado para limitar advertencias repetitivas (ej. "muy oscuro" cada frame).
 inline bool throttle(const std::string& key, double intervalSeconds = 2.0) {
     using Clock = std::chrono::steady_clock;
     static std::unordered_map<std::string,
@@ -52,7 +52,7 @@ inline bool throttle(const std::string& key, double intervalSeconds = 2.0) {
 
 } // namespace detail
 
-// ── Public API ───────────────────────────────────────────────────────────────
+// ── API Pública ───────────────────────────────────────────────────────────────
 
 inline void info(const std::string& tag, const std::string& msg) {
     std::cout << "[" << detail::timestamp() << "][INFO ][" << tag << "] " << msg << "\n";
@@ -74,8 +74,8 @@ inline void separator(const std::string& label = "") {
     }
 }
 
-// Called once per detection attempt — but THROTTLED so it only prints
-// when the result changes or every N seconds (avoids per-frame spam).
+// Llamada una vez por intento de detección — pero LIMITADA para que solo imprima
+// cuando el resultado cambie o cada N segundos (evita spam por cada frame).
 inline void detection(const std::string& cam,
                       bool   found,
                       double brightness,
@@ -88,54 +88,54 @@ inline void detection(const std::string& cam,
 
     std::ostringstream ss;
     if (found) {
-        ss << "✓ FOUND " << cornersFound << "/" << cornersExpected << " corners"
-           << " | brightness=" << std::fixed << std::setprecision(1) << brightness
+        ss << "✓ ENCONTRADO " << cornersFound << "/" << cornersExpected << " esquinas"
+           << " | brillo=" << std::fixed << std::setprecision(1) << brightness
            << (claheUsed ? " | CLAHE=ON" : " | CLAHE=OFF");
         info(cam, ss.str());
     } else {
-        ss << "✗ NOT FOUND"
-           << " | brightness=" << std::fixed << std::setprecision(1) << brightness;
-        if (brightness < 60.0)  ss << " ← TOO DARK (need >60)";
-        if (brightness > 220.0) ss << " ← TOO BRIGHT / overexposed";
-        if (claheUsed)          ss << " | CLAHE=ON (still failed)";
-        else                    ss << " | CLAHE=OFF (try enabling it)";
+        ss << "✗ NO ENCONTRADO"
+           << " | brillo=" << std::fixed << std::setprecision(1) << brightness;
+        if (brightness < 60.0)  ss << " ← MUY OSCURO (necesita >60)";
+        if (brightness > 220.0) ss << " ← MUY BRILLANTE / sobreexpuesto";
+        if (claheUsed)          ss << " | CLAHE=ON (aun asi fallo)";
+        else                    ss << " | CLAHE=OFF (intente activarlo)";
         warn(cam, ss.str());
     }
 }
 
-// Called once per saved pair.
+// Llamado una vez por cada par guardado.
 inline void capture(int done, int total, const std::string& leftPath) {
     std::ostringstream ss;
-    ss << "Pair " << std::setw(2) << std::setfill('0') << done
-       << "/" << total << " saved → " << leftPath;
-    info("Session", ss.str());
+    ss << "Par " << std::setw(2) << std::setfill('0') << done
+       << "/" << total << " guardado → " << leftPath;
+    info("Sesion", ss.str());
 }
 
-// Called after calibrateCamera or stereoCalibrate finishes.
+// Llamado después de que calibrateCamera o stereoCalibrate terminen.
 inline void calibResult(const std::string& phase, double rpe,
                         int imagesUsed, int imagesTotal) {
     std::ostringstream ss;
-    ss << "RMS reprojection error = " << std::fixed << std::setprecision(4)
+    ss << "Error de reproyeccion RMS = " << std::fixed << std::setprecision(4)
        << rpe << " px"
-       << " | images used: " << imagesUsed << "/" << imagesTotal;
+       << " | imagenes usadas: " << imagesUsed << "/" << imagesTotal;
 
-    if      (rpe < 0.3)  ss << "  ✓✓ Excellent";
-    else if (rpe < 0.5)  ss << "  ✓  Good";
-    else if (rpe < 1.0)  ss << "  △  Acceptable (consider recapturing)";
-    else                 ss << "  ✗  Poor — recapture recommended";
+    if      (rpe < 0.3)  ss << "  ✓✓ Excelente";
+    else if (rpe < 0.5)  ss << "  ✓  Bueno";
+    else if (rpe < 1.0)  ss << "  △  Aceptable (considere recapturar)";
+    else                 ss << "  ✗  Deficiente — se recomienda recapturar";
 
     info(phase, ss.str());
 }
 
-// Called when loading a YAML file.
+// Llamado al cargar un archivo YAML.
 inline void yamlLoaded(const std::string& path, bool success) {
-    if (success) info("YAML", "Loaded: " + path);
-    else         error("YAML", "Failed to load: " + path);
+    if (success) info("YAML", "Cargado: " + path);
+    else         error("YAML", "Fallo al cargar: " + path);
 }
 
-// Called when saving a YAML file.
+// Llamado al guardar un archivo YAML.
 inline void yamlSaved(const std::string& path) {
-    info("YAML", "Saved: " + path);
+    info("YAML", "Guardado: " + path);
 }
 
 } // namespace Log

@@ -8,36 +8,37 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // TrackbarUI
 //
-// Encapsulates all OpenCV trackbar logic for SGBM parameter tuning.
+// Encapsula toda la lógica de barras de desplazamiento de OpenCV para ajuste
+// de parámetros SGBM.
 //
-// Design decisions:
+// Decisiones de diseño:
 //
-//   1. SINGLETON via static pointer.
-//      OpenCV trackbar callbacks must be plain C functions or lambdas with
-//      no capture. The only clean way to access class state from them is a
-//      static pointer. One TrackbarUI per process — acceptable here.
+//   1. SINGLETON mediante puntero estático.
+//      Los callbacks de OpenCV deben ser funciones C puras o lambdas sin captura.
+//      La única forma limpia de acceder al estado de clase desde ellos es
+//      un puntero estático. Una instancia TrackbarUI por proceso — aceptable aquí.
 //
-//   2. INT→PARAM mapping happens at read time, not at write time.
-//      Sliders store raw int values (OpenCV requirement). The conversion to
-//      correct SGBM ranges (blockSize must be odd, numDisparities % 16 == 0)
-//      happens in getParams(), not in the callback. This simplifies callbacks
-//      to a single store operation.
+//   2. El mapeo de INT→PARAM ocurre al leer, no al escribir.
+//      Los sliders guardan valores enteros puros (requerimiento de OpenCV).
+//      La conversión a rangos SGBM correctos (blockSize debe ser impar, 
+//      numDisparities % 16 == 0) pasa en getParams(), no en el callback.
+//      Esto simplifica los callbacks a una sola operación de escritura.
 //
-//   3. Thread-safe via mutex + atomic flag.
-//      The processing thread calls getParams() and hasChanged() concurrently
-//      with the display thread driving OpenCV events. The mutex protects the
-//      raw slider values; the atomic flag avoids the mutex for the hot path.
+//   3. Hilo seguro vía mutex + flag atómico.
+//      El hilo de procesamiento llama a getParams() y hasChanged() concurrentemente
+//      con el hilo de display que maneja los eventos de OpenCV. El mutex protege
+//      los valores del slider; el flag atómico evita el mutex en el bucle caliente.
 //
-//   4. SGBM is not recreated on every slider drag.
-//      hasChanged() returns true once and then resets. The caller recreates
-//      SGBM only when the flag is set, not every frame.
+//   4. SGBM no se recrea en cada arrastre del slider.
+//      hasChanged() retorna true una vez y luego se resetea. Quien llama recrea
+//      SGBM solo cuando el flag está activo, no cada frame.
 //
-// Usage:
+// Uso:
 //   TrackbarUI ui;
-//   ui.create("SGBM Controls", initialParams);
+//   ui.create("Controles SGBM", initialParams);
 //
 //   while (running) {
-//       cv::waitKey(1);                   // drives trackbar events
+//       cv::waitKey(1);                   // procesa eventos de la ventana
 //       if (ui.hasChanged()) {
 //           processor.setParams(ui.getParams());
 //       }
@@ -48,15 +49,15 @@ public:
 
     explicit TrackbarUI() = default;
 
-    // Creates the named window and all trackbars.
-    // Must be called from the main/display thread.
+    // Crea la ventana con nombre y todas las barras de control (trackbars).
+    // Debe llamarse desde el hilo principal/de interfaz gráfica.
     void create(const std::string& windowName,
                 const SGBMProcessor::Params& initial) {
         windowName_ = windowName;
         cv::namedWindow(windowName_, cv::WINDOW_NORMAL);
         cv::resizeWindow(windowName_, 400, 350);
 
-        // Store initial raw slider values from params
+        // Guardar valores iniciales de los controles a partir de los parámetros
         {
             std::lock_guard<std::mutex> l(mtx_);
             sliders_.blockSize        = (initial.blockSize - 1) / 2;   // bs=2n+1
@@ -72,7 +73,7 @@ public:
 
         instance_ = this;
 
-        // ── SGBM parameters ──────────────────────────────────────────────────
+        // ── Parámetros SGBM ──────────────────────────────────────────────────
         cv::createTrackbar("blockSize (2n+1)", windowName_,
             &sliders_.blockSize, 10, cbAny, nullptr);
 
@@ -94,30 +95,30 @@ public:
         cv::createTrackbar("preFilterCap", windowName_,
             &sliders_.preFilterCap, 127, cbAny, nullptr);
 
-        // ── WLS parameters ────────────────────────────────────────────────────
+        // ── Parámetros WLS ────────────────────────────────────────────────────
         cv::createTrackbar("WLS lambda (x100)", windowName_,
             &sliders_.wlsLambda, 200, cbAny, nullptr);
 
         cv::createTrackbar("WLS sigma (x10)", windowName_,
             &sliders_.wlsSigma, 30, cbAny, nullptr);
 
-        changed_ = true;  // force initial apply
+        changed_ = true;  // forzar aplicación inicial
     }
 
-    // Returns true once per change event, then resets.
+    // Retorna true una vez por evento de cambio, luego se reinicia.
     bool hasChanged() {
         return changed_.exchange(false);
     }
 
-    // Thread-safe: converts raw slider ints to valid SGBM params.
+    // Thread-safe: convierte valores puros de la UI a parámetros SGBM válidos.
     SGBMProcessor::Params getParams() const {
         std::lock_guard<std::mutex> l(mtx_);
         SGBMProcessor::Params p;
 
-        // blockSize: slider n → 2n+1 (ensures odd, min 3)
+        // blockSize: control n → 2n+1 (asegura impar, min 3)
         p.blockSize = std::max(3, sliders_.blockSize * 2 + 1);
 
-        // numDisparities: slider n → 16n (must be multiple of 16, min 16)
+        // numDisparities: control n → 16n (múltiplo de 16, min 16)
         p.numDisparities = std::max(16, sliders_.numDisparities * 16);
 
         p.uniquenessRatio  = std::max(0, sliders_.uniquenessRatio);
@@ -126,7 +127,7 @@ public:
         p.disp12MaxDiff    = sliders_.disp12MaxDiff;
         p.preFilterCap     = std::max(1, sliders_.preFilterCap);
 
-        // WLS: slider n → λ = 100n, σ = n/10
+        // WLS: control n → λ = 100n, σ = n/10
         p.wlsLambda = sliders_.wlsLambda * 100.0;
         p.wlsSigma  = sliders_.wlsSigma  / 10.0;
 
@@ -143,7 +144,7 @@ private:
     mutable std::mutex mtx_;
     std::atomic<bool>  changed_{false};
 
-    // Raw int values for OpenCV (sliders must be int*)
+    // Valores int para OpenCV (sliders deben ser int*)
     struct Sliders {
         int blockSize        = 5;
         int numDisparities   = 4;
@@ -156,15 +157,15 @@ private:
         int wlsSigma         = 15;   // 1.5 * 10
     } sliders_;
 
-    // Singleton pointer for C-style callback
+    // Puntero singleton para callback estilo C
     static TrackbarUI* instance_;
 
-    // Single callback for all sliders — just sets the changed flag.
-    // The actual value is in the int* passed by OpenCV (already updated).
+    // Único callback para todos los controles — solo marca el flag.
+    // El valor real está en el int* pasado por OpenCV (ya actualizado).
     static void cbAny(int, void*) {
         if (instance_) instance_->changed_ = true;
     }
 };
 
-// Definition of static member (put in ONE .cpp that includes this header)
+// Definición del miembro estático (se pone en UN .cpp que incluya este header)
 inline TrackbarUI* TrackbarUI::instance_ = nullptr;

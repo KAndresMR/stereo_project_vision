@@ -29,20 +29,20 @@ std::string MonoCalibrator::yamlPath(Side side) const {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// buildObjectPoints
 //
-// Creates the "ground truth" 3-D positions of the chessboard corners in the
-// board's own coordinate system. Since the board is flat, Z = 0 for every point.
+// Creamos las posiciones "ground truth" 3-D de las esquinas del tablero 
+// en el sistema de coordenadas del propio tablero. Como el tablero es plano, Z = 0 para cada punto.
 //
-// For boardSize = {8, 5} and squareSizeM = 0.025f, the points are:
+// Para boardSize = {9, 6} and squareSizeM = 0.025f, los puntos son:
 //   (0.000, 0.000, 0)  (0.025, 0.000, 0)  ...  (0.175, 0.000, 0)
 //   (0.000, 0.025, 0)  (0.025, 0.025, 0)  ...  (0.175, 0.025, 0)
 //   ...
 //   (0.000, 0.100, 0)  (0.025, 0.100, 0)  ...  (0.175, 0.100, 0)
 //
-// These are in METERS because squareSizeM is in meters. This makes the
-// translation vector T from stereoCalibrate come out in meters too — so
-// later, Z = f*B/d gives depth in meters directly.
+// Si usas milímetros aquí, el Baseline (B) que calculará StereoCalibrator también 
+// saldría en milímetros, y tu fórmula de profundidad Z = f*B/d daría profundidades 
+// en milímetros. Al usar metros aquí, todo el pipeline de profundidad queda 
+// automáticamente en metros sin conversiones extra.
 // ─────────────────────────────────────────────────────────────────────────────
 std::vector<cv::Point3f> MonoCalibrator::buildObjectPoints() const {
     std::vector<cv::Point3f> pts;
@@ -61,36 +61,31 @@ std::vector<cv::Point3f> MonoCalibrator::buildObjectPoints() const {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// loadAndDetect
 //
-// Loads one JPEG from disk, converts to grayscale, runs ChessboardDetector
-// (which includes CLAHE if needed and sub-pixel refinement).
+// Carga una imagen JPEG desde disco, la convierte a escala de grises y ejecuta
+// ChessboardDetector (que incluye CLAHE si es necesario y refinamiento subpíxel).
 //
-// Returns true only if ALL expected corners were found.
-// The image size is recorded from the first valid image — all subsequent
-// images must match, which calibrateCamera requires.
+// Devuelve true solo si se encontraron TODOS los rincones esperados.
+// El tamaño de la imagen se registra desde la primera imagen válida — 
+// todas las imágenes posteriores deben coincidir, lo cual requiere calibrateCamera.
 // ─────────────────────────────────────────────────────────────────────────────
 bool MonoCalibrator::loadAndDetect(const std::string&        imagePath,
                                    std::vector<cv::Point2f>& outCorners,
                                    cv::Size&                 outImageSize) const {
-    // ── Load ─────────────────────────────────────────────────────────────────
     cv::Mat img = cv::imread(imagePath, cv::IMREAD_COLOR);
     if (img.empty()) {
         Log::error("MonoCalib", "Cannot read: " + imagePath);
         return false;
     }
 
-    outImageSize = img.size();
+    outImageSize = img.size(); // Guardamos el tamaño: 640 x 480
 
-    // ── Convert to gray ───────────────────────────────────────────────────────
     cv::Mat gray;
     cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
 
-    // ── Detect (CLAHE + findChessboardCorners + cornerSubPix) ────────────────
-    cv::Mat displayDummy = img;   // detector draws on this; we discard it here
+    cv::Mat displayDummy = img;  // Copiamos para dibujar
     DetectionResult det  = detector_.detect(gray, displayDummy);
 
-    // Log every image — but only one line per image (not spam)
     const std::string fname = fs::path(imagePath).filename().string();
     if (det.found) {
         Log::info("MonoCalib",
@@ -109,7 +104,7 @@ bool MonoCalibrator::loadAndDetect(const std::string&        imagePath,
 
     if (!det.found) return false;
 
-    outCorners = det.corners;
+    outCorners = det.corners; // Las 54 esquinas encontradas con sub-píxel
     return true;
 }
 
@@ -131,7 +126,7 @@ void MonoCalibrator::validateResult(const Result& result) const {
 
     const cv::Mat& K  = result.cameraMatrix;
     const cv::Mat& D  = result.distCoeffs;
-
+    // fila, columna 
     double fx = K.at<double>(0, 0);
     double fy = K.at<double>(1, 1);
     double cx = K.at<double>(0, 2);
@@ -139,6 +134,12 @@ void MonoCalibrator::validateResult(const Result& result) const {
     double k1 = D.at<double>(0);
 
     const std::string tag = "Validate";
+
+    // Rangos esperados para OV2640 VGA 640x480:
+    // fx, fy: 350-750 px
+    // cx    : 270-370 px (debe estar cerca de 640/2 = 320)
+    // cy    : 190-290 px (debe estar cerca de 480/2 = 240)
+    // k1    : -0.8 a 0.1 (OV2640 típicamente -0.3 a -0.6)
 
     // ── fx / fy ───────────────────────────────────────────────────────────────
     if (fx < 300 || fx > 900)
@@ -179,7 +180,7 @@ void MonoCalibrator::validateResult(const Result& result) const {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// calibrate — the main pipeline
+// El pipeline principal (orquesta todo )
 // ─────────────────────────────────────────────────────────────────────────────
 MonoCalibrator::Result MonoCalibrator::calibrate(Side side) const {
 
@@ -189,15 +190,14 @@ MonoCalibrator::Result MonoCalibrator::calibrate(Side side) const {
 
     Log::separator("MonoCalibrator — " + name + " camera");
 
-    // ── Step 1: find image files ──────────────────────────────────────────────
     if (!fs::exists(dir)) {
         Log::error("MonoCalib", "Directory not found: " + dir);
         return result;
     }
-
+    // ── Paso 1: Buscar todas las imagenes en el disco ──────────────────────────────────────────────
     std::vector<std::string> imagePaths;
     cv::glob(dir + "/*.jpg", imagePaths, false);
-    std::sort(imagePaths.begin(), imagePaths.end());  // consistent order
+    std::sort(imagePaths.begin(), imagePaths.end());
 
     result.imagesTotal = static_cast<int>(imagePaths.size());
     Log::info("MonoCalib", "Found " + std::to_string(result.imagesTotal) +
@@ -208,8 +208,7 @@ MonoCalibrator::Result MonoCalibrator::calibrate(Side side) const {
         return result;
     }
 
-    // ── Step 2: build known 3-D object points ────────────────────────────────
-    // Same for every image — the board geometry does not change.
+    // ── Paso 2: Para cada foto, extraer esquinas ──────────────────────────────────────────────
     const std::vector<cv::Point3f> singleObjPts = buildObjectPoints();
     Log::info("MonoCalib",
               "Object points per image: " + std::to_string(singleObjPts.size()) +
@@ -219,7 +218,7 @@ MonoCalibrator::Result MonoCalibrator::calibrate(Side side) const {
               std::to_string(config_.boardSize.width * config_.boardSize.height) +
               " corners)");
 
-    // ── Step 3: detect corners in every image ────────────────────────────────
+    // ── Step 3: Detectar esquinas en cada imagen ────────────────────────────────
     Log::info("MonoCalib", "Detecting corners...");
 
     std::vector<std::vector<cv::Point3f>> objectPoints;
@@ -231,8 +230,6 @@ MonoCalibrator::Result MonoCalibrator::calibrate(Side side) const {
         cv::Size sz;
 
         if (loadAndDetect(path, corners, sz)) {
-            // Record image size from first valid image.
-            // calibrateCamera requires all images to have the same size.
             if (imageSize.empty()) imageSize = sz;
 
             if (sz != imageSize) {
@@ -265,15 +262,14 @@ MonoCalibrator::Result MonoCalibrator::calibrate(Side side) const {
 
     // ── Step 4: run calibrateCamera ───────────────────────────────────────────
     //
-    // calibrateCamera solves for K and distCoeffs by minimizing the total
-    // reprojection error across all corners in all images.
+    // calibrateCamera resuelve K y distCoeffs minimizando el error de reproyección total.
     //
-    // Flags used:
-    //   (none / 0) — estimate all 5 standard distortion coefficients
-    //                (k1, k2, p1, p2, k3). For OV2640 this is usually enough.
+    // Flags utilizados:
+    //   (none / 0) — estimar los 5 coeficientes de distorsión estándar
+    //                (k1, k2, p1, p2, k3). Para OV2640 suele ser suficiente.
     //
-    // Output rotationVecs and translationVecs describe the pose of the board
-    // in each image. We don't save them — they're only needed internally.
+    // rotationVecs y translationVecs describen la pose de la cámara en cada imagen.
+    // No se guardan porque solo se usan internamente.
     //
     Log::info("MonoCalib", "Running cv::calibrateCamera...");
 
@@ -288,9 +284,6 @@ MonoCalibrator::Result MonoCalibrator::calibrate(Side side) const {
             result.distCoeffs,
             rvecs,
             tvecs
-            // No extra flags: use the default 5-coefficient model.
-            // To enable 8-coefficient rational model (better for wide-angle),
-            // add: cv::CALIB_RATIONAL_MODEL
         );
     } catch (const cv::Exception& e) {
         Log::error("MonoCalib", "calibrateCamera threw: " + std::string(e.what()));
@@ -299,17 +292,11 @@ MonoCalibrator::Result MonoCalibrator::calibrate(Side side) const {
 
     result.imageSize = imageSize;
     result.success   = true;
-
-    // ── Step 5: validate and log ──────────────────────────────────────────────
     validateResult(result);
     printSummary(result, side);
-
     return result;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// saveYAML
-// ─────────────────────────────────────────────────────────────────────────────
 bool MonoCalibrator::saveYAML(const Result& result, Side side) const {
 
     if (!result.success) {
@@ -318,8 +305,6 @@ bool MonoCalibrator::saveYAML(const Result& result, Side side) const {
     }
 
     const std::string path = yamlPath(side);
-
-    // Create parent directory if needed
     fs::create_directories(fs::path(path).parent_path());
 
     cv::FileStorage fs(path, cv::FileStorage::WRITE);
@@ -328,7 +313,7 @@ bool MonoCalibrator::saveYAML(const Result& result, Side side) const {
         return false;
     }
 
-    // ── Write metadata ────────────────────────────────────────────────────────
+    // ── Escribir metadata ────────────────────────────────────────────────────────
     fs << "camera_name"            << sideName(side)
        << "image_width"            << result.imageSize.width
        << "image_height"           << result.imageSize.height
@@ -339,7 +324,7 @@ bool MonoCalibrator::saveYAML(const Result& result, Side side) const {
        << "images_total"           << result.imagesTotal
        << "rms_reprojection_error" << result.rpe;
 
-    // ── Write calibration matrices ────────────────────────────────────────────
+    // ── Escribir matrices de calibracion ────────────────────────────────────────────
     fs << "camera_matrix"              << result.cameraMatrix
        << "distortion_coefficients"    << result.distCoeffs;
 
@@ -349,9 +334,6 @@ bool MonoCalibrator::saveYAML(const Result& result, Side side) const {
     return true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// printSummary
-// ─────────────────────────────────────────────────────────────────────────────
 void MonoCalibrator::printSummary(const Result& result, Side side) const {
     if (!result.success) return;
 

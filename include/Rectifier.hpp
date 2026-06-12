@@ -4,21 +4,21 @@
 #include "CalibrationConfig.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Rectifier — Phase 3 of the pipeline
+// Rectifier — Fase 3 del pipeline
 //
-// Responsibility:
-//   Given the stereo calibration (R, T, K, dist for each camera),
-//   compute the pixel-level remapping that transforms raw camera images
-//   into rectified images where:
-//     - epipolar lines are perfectly horizontal
-//     - corresponding points in left and right images lie on the same row
-//     - stereo matching (SGBM) can scan only one row per pixel
+// Responsabilidad:
+//   Dada la calibración estéreo (R, T, K, dist para cada cámara),
+//   calcular el remapeo a nivel de píxel que transforma las imágenes crudas
+//   de la cámara en imágenes rectificadas donde:
+//     - las líneas epipolares son perfectamente horizontales
+//     - los puntos correspondientes en la imagen izquierda y derecha yacen en la misma fila
+//     - la correspondencia estéreo (SGBM) solo necesita escanear una fila por píxel
 //
-// Two usage modes:
-//   OFFLINE: rectify saved images from the dataset (for debug/verification)
-//   LIVE:    rectify frames coming from the ESP32 streams in real time
+// Dos modos de uso:
+//   OFFLINE: rectificar imágenes guardadas del dataset (para depuración/verificación)
+//   EN VIVO: rectificar frames de los streams del ESP32 en tiempo real
 //
-// Usage:
+// Uso:
 //   Rectifier rect(config);
 //   if (rect.compute()) {
 //       auto [left_r, right_r] = rect.rectify(rawLeft, rawRight);
@@ -28,39 +28,39 @@
 class Rectifier {
 public:
 
-    // All pre-computed rectification data needed at runtime.
+    // Todos los datos de rectificación precalculados necesarios en tiempo de ejecución.
     struct Maps {
-        cv::Mat map1x, map1y;   // pixel remap for LEFT camera
-        cv::Mat map2x, map2y;   // pixel remap for RIGHT camera
-        cv::Mat R1, R2;         // rectifying rotation for each camera
-        cv::Mat P1, P2;         // projection matrices after rectification
-        cv::Mat Q;              // 4×4 disparity-to-depth matrix
+        cv::Mat map1x, map1y;   // mapeo de píxeles para cámara IZQUIERDA
+        cv::Mat map2x, map2y;   // mapeo de píxeles para cámara DERECHA
+        cv::Mat R1, R2;         // rotación de rectificación para cada cámara
+        cv::Mat P1, P2;         // matrices de proyección tras la rectificación
+        cv::Mat Q;              // matriz 4×4 para convertir disparidad a profundidad
         cv::Size imageSize;
         bool ready = false;
     };
 
     explicit Rectifier(const CalibrationConfig& config);
 
-    // Load all YAMLs and compute remap tables.
-    // Must be called before rectify() or drawEpipolarLines().
+    // Carga todos los YAMLs y calcula las tablas de mapeo.
+    // Debe llamarse antes de rectify() o drawEpipolarLines().
     bool compute();
 
-    // Apply rectification to a stereo pair.
-    // Input:  raw frames from cameras (or from disk)
-    // Output: pair of rectified images (left, right)
+    // Aplica rectificación a un par estéreo.
+    // Entrada: frames crudos de las cámaras (o del disco)
+    // Salida:  par de imágenes rectificadas (izquierda, derecha)
     std::pair<cv::Mat, cv::Mat> rectify(const cv::Mat& rawLeft,
                                          const cv::Mat& rawRight) const;
 
-    // Debug visualization: side-by-side rectified pair with horizontal
-    // green lines overlaid. If rectification is correct, the same physical
-    // point appears on the SAME line in both images.
+    // Visualización de depuración: par rectificado lado a lado con líneas verdes
+    // horizontales superpuestas. Si la rectificación es correcta, el mismo punto físico
+    // aparece en la MISMA línea en ambas imágenes.
     cv::Mat drawEpipolarLines(const cv::Mat& rectLeft,
                                const cv::Mat& rectRight,
                                int lineSpacing = 40) const;
 
-    // Run an offline visual check on the saved dataset pairs.
-    // Loads each pair, rectifies, draws epipolar lines, shows window.
-    // Press any key to advance, ESC to quit.
+    // Ejecuta una verificación visual offline en los pares guardados del dataset.
+    // Carga cada par, rectifica, dibuja líneas epipolares, y muestra una ventana.
+    // Presionar cualquier tecla para avanzar, ESC para salir.
     void previewDataset() const;
 
     bool isReady() const { return maps_.ready; }

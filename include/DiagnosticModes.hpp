@@ -2,8 +2,8 @@
 #include "CameraStream.hpp"
 #include "CalibrationConfig.hpp"
 
-// Preview rectified cameras with epipolar lines
+// Vista previa de cámaras rectificadas con líneas epipolares
 void runLiveRectifiedPreview(CameraStream& cam1, CameraStream& cam2, const CalibrationConfig& config);
 
-// Epipolar line check on the static dataset
+// Verificación de líneas epipolares en el dataset estático
 void runEpipolarDatasetCheck(const CalibrationConfig& config);

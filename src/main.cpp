@@ -5,7 +5,7 @@
 #include "CalibrationMode.hpp"
 #include "CalibrationPipeline.hpp"
 #include "DisparityMode.hpp"
-#include "DiagnosticModes.hpp" // Included for diagnostics (hidden features)
+#include "DiagnosticModes.hpp" // Incluido para diagnósticos (funciones ocultas)
 #include "DiagnosticLogger.hpp"
 #include <thread>
 #include <iostream>
@@ -15,7 +15,7 @@
 namespace fs = std::filesystem;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PipelineStatus — checks which pipeline stages are complete
+// PipelineStatus — verifica qué etapas del pipeline están completas
 // ─────────────────────────────────────────────────────────────────────────────
 struct PipelineStatus {
     int  datasetLeft  = 0;
@@ -58,28 +58,28 @@ static void printMenu(const PipelineStatus& st) {
     std::cout
         << "\n"
         << "  ╔══════════════════════════════════════════════╗\n"
-        << "  ║        Stereo Vision — Pipeline Menu         ║\n"
+        << "  ║        Vision Estereo — Menu Principal       ║\n"
         << "  ╚══════════════════════════════════════════════╝\n\n"
-        << "  Pipeline status:\n"
-        << "  " << dsIcon()       << " Dataset LEFT=" << st.datasetLeft << " RIGHT=" << st.datasetRight << "\n"
-        << "  " << icon(st.leftYaml)   << " LEFT YAML\n"
-        << "  " << icon(st.rightYaml)  << " RIGHT YAML\n"
-        << "  " << icon(st.stereoYaml) << " Stereo YAML\n\n"
+        << "  Estado del pipeline:\n"
+        << "  " << dsIcon()       << " Dataset IZQ=" << st.datasetLeft << " DER=" << st.datasetRight << "\n"
+        << "  " << icon(st.leftYaml)   << " YAML IZQUIERDO\n"
+        << "  " << icon(st.rightYaml)  << " YAML DERECHO\n"
+        << "  " << icon(st.stereoYaml) << " YAML Estereo\n\n"
         << "  ┌─────────────────────────────────────────────┐\n"
-        << "  │  1. Capture dataset                         │\n"
-        << "  │  2. Run calibration (Mono + Stereo)         │\n"
-        << "  │  3. Live disparity (SGBM)                   │\n"
+        << "  │  1. Capturar dataset                        │\n"
+        << "  │  2. Ejecutar calibracion (Mono + Estereo)   │\n"
+        << "  │  3. Disparidad en vivo (SGBM)               │\n"
         << "  │                                             │\n"
-        << "  │  0. Exit                                    │\n"
+        << "  │  0. Salir                                   │\n"
         << "  └─────────────────────────────────────────────┘\n"
-        << "\n  Choice: ";
+        << "\n  Opcion: ";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // waitForCameras
 // ─────────────────────────────────────────────────────────────────────────────
 static void waitForCameras(CameraStream& cam1, CameraStream& cam2) {
-    std::cout << "\n  Connecting to cameras";
+    std::cout << "\n  Conectando a las camaras";
     std::cout.flush();
     while (grabFrame(cam1).empty() || grabFrame(cam2).empty()) {
         std::cout << ".";
@@ -93,7 +93,7 @@ static void waitForCameras(CameraStream& cam1, CameraStream& cam2) {
 // main
 // ─────────────────────────────────────────────────────────────────────────────
 int main() {
-    // ── Pipeline config ───────────────────────────────────────────────────────
+    // ── Configuracion del pipeline ───────────────────────────────────────────
     CalibrationConfig config;
     config.boardSize    = {9, 6};
     config.squareSizeM  = 0.025f;
@@ -103,21 +103,21 @@ int main() {
     config.rightYaml    = "calib_pairs/calib/right.yaml";
     config.stereoYaml   = "calib_pairs/calib/stereo.yaml";
 
-    // ── Camera streams ────────────────────────────────────────────────────────
+    // ── Streams de camara ────────────────────────────────────────────────────
     bool camerasRunning = false;
     CameraStream cam1, cam2;
     std::thread t1, t2;
 
     auto ensureCams = [&]() {
         if (camerasRunning) return;
-        std::cout << "\n  Starting camera streams...\n";
-        t1 = std::thread(streamCamera, "http://192.168.1.2:81/stream", std::ref(cam1)); 
-        t2 = std::thread(streamCamera, "http://192.168.1.3:81/stream", std::ref(cam2));
+        std::cout << "\n  Iniciando streams de camara...\n";
+        t1 = std::thread(streamCamera, "http://192.168.18.111:81/stream", std::ref(cam1)); 
+        t2 = std::thread(streamCamera, "http://192.168.18.112:81/stream", std::ref(cam2));
         waitForCameras(cam1, cam2);
         camerasRunning = true;
     };
 
-    // ── Menu loop ─────────────────────────────────────────────────────────────
+    // ── Bucle del menu ───────────────────────────────────────────────────────
     while (true) {
         PipelineStatus st = PipelineStatus::check(config);
         printMenu(st);
@@ -127,7 +127,7 @@ int main() {
         input.erase(0, input.find_first_not_of(" \t"));
         if (input.empty()) continue;
 
-        if (input == "0") { std::cout << "\n  Goodbye.\n\n"; break; }
+        if (input == "0") { std::cout << "\n  Adios.\n\n"; break; }
 
         if (input == "1") {
             ensureCams();
@@ -135,37 +135,37 @@ int main() {
             continue;
         }
         if (input == "2") {
-            if (!st.datasetReady()) { std::cout << "\n  Dataset not ready (min 10 pairs required).\n"; continue; }
+            if (!st.datasetReady()) { std::cout << "\n  Dataset no listo (minimo 10 pares requeridos).\n"; continue; }
             runFullCalibration(config);
-            std::cout << "\nPress ENTER..."; std::getline(std::cin, input);
+            std::cout << "\nPresione ENTER para continuar..."; std::getline(std::cin, input);
             continue;
         }
         if (input == "3") {
-            if (!st.stereoReady()) { std::cout << "\n  Run calibration first.\n"; continue; }
+            if (!st.stereoReady()) { std::cout << "\n  Ejecute la calibracion primero.\n"; continue; }
             ensureCams();
             runLiveDisparity(cam1, cam2, config);
             continue;
         }
 
-        // ── HIDDEN DIAGNOSTIC OPTIONS (Uncomment / use directly if needed) ─────
+        // ── OPCIONES DE DIAGNÓSTICO OCULTAS (Descomentar / usar directamente si se necesita) ─────
         /*
         if (input == "8") {
-            if (!st.stereoReady()) { std::cout << "\n  Run calibration first.\n"; continue; }
+            if (!st.stereoReady()) { std::cout << "\n  Ejecute la calibracion primero.\n"; continue; }
             runEpipolarDatasetCheck(config);
             continue;
         }
         if (input == "9") {
-            if (!st.stereoReady()) { std::cout << "\n  Run calibration first.\n"; continue; }
+            if (!st.stereoReady()) { std::cout << "\n  Ejecute la calibracion primero.\n"; continue; }
             ensureCams();
             runLiveRectifiedPreview(cam1, cam2, config);
             continue;
         }
         */
 
-        std::cout << "\n  Unknown option.\n";
+        std::cout << "\n  Opcion desconocida.\n";
     }
 
-    // ── Shutdown ──────────────────────────────────────────────────────────────
+    // ── Apagado ──────────────────────────────────────────────────────────────
     if (camerasRunning) {
         running = false;
         cv::destroyAllWindows();

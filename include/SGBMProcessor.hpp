@@ -5,26 +5,26 @@
 #include <mutex>
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SGBMProcessor — Stereo Matching + WLS + Temporal Smoothing
+// SGBMProcessor — Emparejamiento Estéreo + WLS + Suavizado Temporal
 //
-// Ownership model:
-//   - Owns the StereoSGBM (left matcher) and the right matcher.
-//   - Owns the WLS filter.
-//   - Owns the temporal smoothing buffer.
-//   - Stateless with respect to frames — compute() is pure.
-//     Exception: temporalSmooth() is stateful (history buffer).
+// Modelo de propiedad:
+//   - Posee el StereoSGBM (matcher izquierdo) y el matcher derecho.
+//   - Posee el filtro WLS.
+//   - Posee el buffer de suavizado temporal.
+//   - Sin estado respecto a los frames — compute() es pura.
+//     Excepción: temporalSmooth() tiene estado (buffer histórico).
 //
-// Thread safety:
-//   - setParams() is NOT thread safe — call only from the display thread
-//     when the processing thread is paused (or use a copy + swap pattern).
-//   - compute(), postprocess(), normalize() ARE safe to call from a single
-//     processing thread concurrently with the display thread reading results.
+// Seguridad de hilos:
+//   - setParams() NO es seguro entre hilos — llamar solo desde el hilo de display
+//     cuando el hilo de procesamiento está pausado.
+//   - compute(), postprocess(), normalize() SÍ son seguros de llamar desde un
+//     hilo de procesamiento concurrentemente con el hilo de display.
 //
-// WLS filter note:
-//   WLS requires a "right disparity" computed by running SGBM in the
-//   reverse direction (right→left). This costs ~2× CPU per frame but gives
-//   significantly better edges and fills occlusion regions.
-//   Controlled by the useWLS flag in Params.
+// Nota sobre el filtro WLS:
+//   WLS requiere una "disparidad derecha" calculada ejecutando SGBM en dirección
+//   inversa (derecha→izquierda). Esto cuesta ~2× CPU por frame pero mejora
+//   significativamente los bordes y rellena las regiones de oclusión.
+//   Controlado por el flag useWLS en Params.
 // ─────────────────────────────────────────────────────────────────────────────
 class SGBMProcessor {
 public:
@@ -32,31 +32,31 @@ public:
     struct Params {
         // ── SGBM ─────────────────────────────────────────────────────────────
         int minDisparity     = 16;
-        int numDisparities   = 96;   // must be % 16 == 0
-        int blockSize        = 9;   // must be odd
+        int numDisparities   = 96;   // debe ser múltiplo de 16
+        int blockSize        = 9;    // debe ser impar
 
-        // Smoothness penalties. 0 → auto-computed from blockSize.
+        // Penalizaciones de suavidad. 0 → se calculan automáticamente desde blockSize.
         int P1               = 0;
         int P2               = 0;
 
         int disp12MaxDiff    = 1;
-        int preFilterCap     = 63; // Defecto 31
-        int uniquenessRatio  = 15;
-        int speckleWindowSize = 150;
+        int preFilterCap     = 63;  // valor por defecto: 31
+        int uniquenessRatio  = 20;
+        int speckleWindowSize = 250;
         int speckleRange     = 2;
-        int mode             = cv::StereoSGBM::MODE_SGBM_3WAY; // Probar MODE_SGBM
+        int mode             = cv::StereoSGBM::MODE_SGBM_3WAY;
 
-        // ── WLS filter ────────────────────────────────────────────────────────
+        // ── Filtro WLS ───────────────────────────────────────────────────────
         bool   useWLS    = true;
-        double wlsLambda = 8000.0;
-        double wlsSigma  = 1.0;
+        double wlsLambda = 10000.0;
+        double wlsSigma  = 0.6;
 
-        // ── Temporal smoothing ────────────────────────────────────────────────
+        // ── Suavizado temporal ────────────────────────────────────────────────
         bool  useTemporalSmoothing = true;
-        int   temporalWindow       = 4;    // frames to blend
-        float temporalAlpha        = 0.6f; // EMA weight [0=frozen, 1=no smoothing]
+        int   temporalWindow       = 4;    // frames a mezclar
+        float temporalAlpha        = 0.4f; // peso EMA [0=congelado, 1=sin suavizado]
 
-        // ── Depth output ──────────────────────────────────────────────────────
+        // ── Salida de profundidad ─────────────────────────────────────────────
         float minDepthM = 0.10f;
         float maxDepthM = 5.00f;
 
@@ -71,40 +71,40 @@ public:
 
     explicit SGBMProcessor(const Params& params);
 
-    // Resets all matchers and WLS filter. Call after setParams().
+    // Reinicia todos los matchers y el filtro WLS. Llamar tras setParams().
     void setParams(const Params& p);
     const Params& getParams() const { return params_; }
 
-    // ── Core pipeline steps ───────────────────────────────────────────────────
+    // ── Pasos del pipeline principal ──────────────────────────────────────────
 
-    // Step 1: Compute raw disparity (CV_16S, real_disp = value / 16.0).
-    // rectLeft and rectRight must be already undistorted+rectified.
-    // Internally applies CLAHE before SGBM for better contrast.
+    // Paso 1: Calcular disparidad cruda (CV_16S, disp_real = valor / 16.0).
+    // rectLeft y rectRight deben estar ya sin distorsión y rectificadas.
+    // Aplica internamente CLAHE antes de SGBM para mejor contraste.
     cv::Mat compute(const cv::Mat& rectLeft, const cv::Mat& rectRight);
 
-    // Step 2: WLS post-filter (fills holes, sharpens edges).
-    // Pass the result of compute() and the raw rectLeft for edge guidance.
-    // If useWLS==false, returns rawDisparity unchanged.
+    // Paso 2: Post-filtro WLS (rellena huecos, afila bordes).
+    // Pasar el resultado de compute() y rectLeft como guía de bordes.
+    // Si useWLS==false, retorna rawDisparity sin cambios.
     cv::Mat postprocess(const cv::Mat& rawDisparity,
                         const cv::Mat& rectLeft);
 
-    // Step 3: Temporal EMA smoothing across frames.
-    // Reduces frame-to-frame flickering at the cost of slight lag.
-    // If useTemporalSmoothing==false, returns input unchanged.
+    // Paso 3: Suavizado temporal EMA entre frames.
+    // Reduce el parpadeo frame a frame a costa de un leve retraso.
+    // Si useTemporalSmoothing==false, retorna la entrada sin cambios.
     cv::Mat temporalSmooth(const cv::Mat& filteredDisparity);
 
-    // Step 4: Convert 16S disparity to 8-bit false-color for display.
-    // COLORMAP_TURBO: blue=far, red=near.
+    // Paso 4: Convertir disparidad 16S a falso color de 8 bits para mostrar.
+    // COLORMAP_TURBO: azul=lejos, rojo=cerca.
     cv::Mat visualize(const cv::Mat& disparity) const;
 
-    // ── Depth conversion ──────────────────────────────────────────────────────
+    // ── Conversión a profundidad ──────────────────────────────────────────────
 
-    // Converts filtered disparity → metric depth (Z in meters) using Q matrix.
-    // Invalid pixels (disp <= 0) and out-of-range depths are set to 0.
-    // Returns CV_32F depth map.
+    // Convierte disparidad filtrada → profundidad métrica (Z en metros) usando la matriz Q.
+    // Los píxeles inválidos (disp <= 0) y profundidades fuera de rango se ponen en 0.
+    // Retorna un mapa de profundidad CV_32F.
     cv::Mat toDepth(const cv::Mat& disparity, const cv::Mat& Q) const;
 
-    // Colorize depth map for display (near=red, far=blue).
+    // Colorizar el mapa de profundidad para visualización (cerca=rojo, lejos=azul).
     cv::Mat visualizeDepth(const cv::Mat& depthM) const;
 
     // Getter para obtener la imagen procesada con CLAHE y mostrarla en el dashboard
@@ -118,14 +118,14 @@ private:
     cv::Ptr<cv::ximgproc::DisparityWLSFilter>   wlsFilter_;
     cv::Ptr<cv::CLAHE>                          clahe_;
 
-    // Temporal smoothing state (CV_32F accumulated average)
+    // Estado del suavizado temporal (promedio acumulado CV_32F)
     cv::Mat  smoothed_;
     bool     smoothedValid_ = false;
 
-    // Right disparity (needed by WLS, computed in compute() when useWLS=true)
+    // Disparidad derecha (necesaria para WLS, calculada en compute() cuando useWLS=true)
     cv::Mat  rightDisp_;
 
-    void init();  // (re)create all matchers from params_
+    void init();  // (re)crear todos los matchers desde params_
     
     // Variable para guardar el resultado del CLAHE
     cv::Mat enhancedL_;

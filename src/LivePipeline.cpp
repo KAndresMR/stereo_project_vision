@@ -20,14 +20,14 @@ void LivePipeline::start(CameraStream& camL, CameraStream& camR) {
     camR_    = &camR;
     running_ = true;
     thread_  = std::thread(&LivePipeline::loop, this);
-    Log::info("LivePipeline", "Processing thread started");
+    Log::info("LivePipeline", "Hilo de procesamiento iniciado");
 }
 
 void LivePipeline::stop() {
     if (!running_) return;
     running_ = false;
     if (thread_.joinable()) thread_.join();
-    Log::info("LivePipeline", "Processing thread stopped");
+    Log::info("LivePipeline", "Hilo de procesamiento detenido");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,35 +55,35 @@ bool LivePipeline::framesValid(const cv::Mat& fL, const cv::Mat& fR,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// loop — processing thread body
+// loop — cuerpo del hilo de procesamiento
 //
-// Runs continuously while running_ == true.
-// Does NOT sleep between iterations — if SGBM is slower than cameras,
-// it naturally processes at camera FPS. If faster, it re-processes the
-// same frame (slightly wasteful but keeps latency minimal).
+// Corre continuamente mientras running_ == true.
+// NO duerme entre iteraciones — si SGBM es más lento que las cámaras,
+// naturalmente procesa a los FPS de las cámaras. Si es más rápido, reprocesa
+// el mismo frame (un poco de desperdicio pero mantiene latencia mínima).
 //
-// Consider adding a condition_variable if CPU usage is a concern:
-//   wait until camera timestamp changes before processing next frame.
+// Considerar añadir un condition_variable si el uso del CPU es un problema:
+//   esperar hasta que la marca de tiempo de la cámara cambie antes del próximo frame.
 // ─────────────────────────────────────────────────────────────────────────────
 void LivePipeline::loop() {
-    Log::info("LivePipeline", "Thread running");
+    Log::info("LivePipeline", "Hilo corriendo");
 
-    // For FPS measurement
+    // Para la medición de FPS
     auto fpsTimer   = Clock::now();
     int  frameCount = 0;
 
-    // Rolling average for processingMs
+    // Promedio móvil para processingMs
     std::deque<double> processTimes;
 
     while (running_) {
 
-        // ── Apply pending param update ─────────────────────────────────────
+        // ── Aplicar actualización de parámetros pendiente ──────────────────
         if (paramsChanged_.exchange(false)) {
             std::lock_guard<std::mutex> l(paramsMtx_);
             sgbm_.setParams(pendingParams_);
         }
 
-        // ── Grab latest synchronized frame pair ───────────────────────────
+        // ── Tomar el último par de frames sincronizados ─────────────────────
         cv::Mat rawL, rawR;
         Clock::time_point tsL, tsR;
         {
@@ -100,20 +100,20 @@ void LivePipeline::loop() {
             continue;
         }
 
-        // ── Time the full processing cycle ────────────────────────────────
+        // ── Medir el tiempo del ciclo de procesamiento completo ──────────────
         auto t0 = Clock::now();
 
-        // ── Rectify ───────────────────────────────────────────────────────
+        // ── Rectificar ────────────────────────────────────────────────────────
         auto [rectL, rectR] = rectifier_.rectify(rawL, rawR);
         if (rectL.empty() || rectR.empty()) continue;
 
-        // ── SGBM ──────────────────────────────────────────────────────────
+        // ── SGBM ─────────────────────────────────────────────────────────────
         cv::Mat rawDisp  = sgbm_.compute(rectL, rectR);
         cv::Mat filtDisp = sgbm_.postprocess(rawDisp, rectL);
         cv::Mat smoothDisp = sgbm_.temporalSmooth(filtDisp);
         cv::Mat dispVis  = sgbm_.visualize(smoothDisp);
 
-        // ── Depth ─────────────────────────────────────────────────────────
+        // ── Profundidad ───────────────────────────────────────────────────────
         cv::Mat depthM, depthVis;
         if (cfg_.showDepth) {
             depthM   = sgbm_.toDepth(smoothDisp, rectifier_.maps().Q);
@@ -122,7 +122,7 @@ void LivePipeline::loop() {
 
         double ms = Fms(Clock::now() - t0).count();
 
-        // ── Publish result ────────────────────────────────────────────────
+        // ── Publicar resultado ────────────────────────────────────────────────
         {
             std::lock_guard<std::mutex> l(resultMtx_);
             latestResult_.disparity    = smoothDisp;
@@ -140,7 +140,7 @@ void LivePipeline::loop() {
             hasResult_ = true;
         }
 
-        // ── Update metrics ────────────────────────────────────────────────
+        // ── Actualizar métricas ───────────────────────────────────────────────
         processTimes.push_back(ms);
         if (processTimes.size() > 30) processTimes.pop_front();
         metrics_.avgProcessingMs = std::accumulate(
@@ -154,20 +154,20 @@ void LivePipeline::loop() {
             Log::info("LivePipeline",
                 "FPS=" + std::to_string((int)metrics_.actualFPS) +
                 " proc=" + std::to_string((int)metrics_.avgProcessingMs) + "ms" +
-                " dropped=" + std::to_string(metrics_.droppedFrames));
+                " descarts=" + std::to_string(metrics_.droppedFrames));
             frameCount = 0;
             fpsTimer   = Clock::now();
         }
     }
 
-    Log::info("LivePipeline", "Thread exiting");
+    Log::info("LivePipeline", "Hilo finalizando");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 bool LivePipeline::getLatest(Result& out) const {
     std::lock_guard<std::mutex> l(resultMtx_);
     if (!hasResult_) return false;
-    out = latestResult_;  // full copy — caller owns the data
+    out = latestResult_;  // copia completa — quien llama posee los datos
     return true;
 }
 

@@ -6,7 +6,7 @@
 void runLiveRectifiedPreview(CameraStream& cam1, CameraStream& cam2, const CalibrationConfig& config) {
     Rectifier rect(config);
     if (!rect.compute()) { 
-        Log::error("DiagnosticModes", "Rectification init failed"); 
+        Log::error("DiagnosticModes", "Fallo la inicializacion de la rectificacion"); 
         return; 
     }
 
@@ -15,7 +15,7 @@ void runLiveRectifiedPreview(CameraStream& cam1, CameraStream& cam2, const Calib
         cv::Mat f2 = grabFrame(cam2);
         if (!f1.empty() && !f2.empty()) {
             auto [rL, rR] = rect.rectify(f1, f2);
-            cv::imshow("Live Rectified", rect.drawEpipolarLines(rL, rR));
+            cv::imshow("Rectificada en vivo", rect.drawEpipolarLines(rL, rR));
         }
         if (cv::waitKey(1) == 27) break;
     }
@@ -25,7 +25,7 @@ void runLiveRectifiedPreview(CameraStream& cam1, CameraStream& cam2, const Calib
 void runEpipolarDatasetCheck(const CalibrationConfig& config) {
     Rectifier rect(config);
     if (!rect.compute()) { 
-        Log::error("DiagnosticModes", "Rectification failed"); 
+        Log::error("DiagnosticModes", "Fallo la rectificacion"); 
         return; 
     }
     rect.previewDataset();

@@ -17,19 +17,19 @@ CalibrationSession::CalibrationSession(
     scanExistingDataset();
 
     std::cout
-        << "[Session] Output: "
+        << "[Session] Salida: "
         << fs::absolute(config_.datasetDir)
         << "\n";
 
     std::cout
-        << "[Session] Existing pairs: "
+        << "[Session] Pares existentes: "
         << pairCount_
         << "\n";
 
     std::cout
-        << "[Session] Target: "
+        << "[Session] Objetivo: "
         << config_.targetPairs
-        << " pairs\n";
+        << " pares\n";
 }
 
 void CalibrationSession::scanExistingDataset()
@@ -85,8 +85,8 @@ std::string CalibrationSession::rightPath(int n) const {
 bool CalibrationSession::savePair(const cv::Mat& left, const cv::Mat& right) {
     int idx = pairCount_ + 1;
 
-    // JPEG quality 95 — high enough to preserve corner detail for calibration.
-    // Avoid quality 100 (doubles file size with minimal benefit).
+    // Calidad JPEG 95 — suficientemente alta para preservar detalle de esquinas para calibración.
+    // Evitar calidad 100 (duplica tamaño de archivo con beneficio mínimo).
     std::vector<int> params{cv::IMWRITE_JPEG_QUALITY, 95};
 
     bool ok = cv::imwrite(leftPath(idx),  left,  params)
@@ -94,11 +94,11 @@ bool CalibrationSession::savePair(const cv::Mat& left, const cv::Mat& right) {
 
     if (ok) {
         pairCount_++;
-        std::cout << "[Session] Pair " << std::setw(2) << pairCount_
+        std::cout << "[Session] Par " << std::setw(2) << pairCount_
                   << "/" << config_.targetPairs
                   << " → " << leftPath(idx) << "\n";
     } else {
-        std::cerr << "[Session] ERROR: could not write pair " << idx << "\n";
+        std::cerr << "[Session] ERROR: no se pudo escribir el par " << idx << "\n";
     }
 
     return ok;

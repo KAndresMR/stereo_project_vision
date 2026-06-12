@@ -9,89 +9,90 @@
 #include "SGBMProcessor.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LivePipeline — Real-time stereo processing thread
+// LivePipeline — Hilo de procesamiento estéreo en tiempo real
 //
-// Threading model:
+// Modelo de hilos:
 //
-//   [Camera Thread L] ──→ CameraStream::frame (mutex protected)
-//   [Camera Thread R] ──→ CameraStream::frame (mutex protected)
+//   [Hilo Cámara L] ──→ CameraStream::frame (protegido por mutex)
+//   [Hilo Cámara R] ──→ CameraStream::frame (protegido por mutex)
 //                                   │
-//                                   ▼  (processing thread grabs LATEST pair)
-//   [Processing Thread] ──→ rectify → SGBM → depth → Result (single slot)
+//                                   ▼  (hilo de proc. toma el ÚLTIMO par)
+//   [Hilo Proc.] ──→ rectificación → SGBM → profundidad → Result (un solo slot)
 //                                   │
-//                                   ▼  (display thread reads latest result)
-//   [Display/Main Thread] ──→ LivePipeline::getLatest()
+//                                   ▼  (hilo de UI lee el último resultado)
+//   [Hilo Principal/UI] ──→ LivePipeline::getLatest()
 //
-// Key design decisions:
+// Decisiones clave de diseño:
 //
-//   SINGLE-SLOT RESULT BUFFER (not a queue):
-//     The display thread always wants the LATEST result, not an old one.
-//     A queue would introduce latency proportional to its length.
-//     A single slot (swap on write, copy on read) gives minimum latency.
+//   BUFFER DE RESULTADO DE UN SOLO SLOT (no es una cola):
+//     El hilo de visualización siempre quiere el ÚLTIMO resultado, no uno viejo.
+//     Una cola introduciría latencia proporcional a su tamaño.
+//     Un solo slot (intercambio al escribir, copia al leer) da latencia mínima.
 //
-//   FRAME-DROP STRATEGY:
-//     The processing thread grabs the latest frame and immediately starts
-//     processing. If a new camera frame arrives during processing (likely,
-//     since SGBM takes 100-300ms and cameras run at ~10 FPS), the next
-//     iteration picks up the newer frame. Old frames are silently discarded.
-//     This is the correct strategy for real-time display.
+//   ESTRATEGIA DE DESCARTE DE FRAMES:
+//     El hilo de procesamiento toma el último frame e inmediatamente empieza
+//     a procesar. Si llega un nuevo frame durante el proceso (probable,
+//     ya que SGBM toma 100-300ms y las cámaras van a ~10 FPS), la siguiente
+//     iteración toma el frame más nuevo. Los frames viejos se descartan
+//     silenciosamente. Esta es la estrategia correcta para vista en tiempo real.
 //
-//   FRAME VALIDATION:
-//     Before processing, the pipeline checks:
-//     1. Both frames are non-empty.
-//     2. Both frames are fresh (age < maxFrameAgeMs).
-//     3. Timestamps are synchronized (|t_L - t_R| < maxSyncDiffMs).
-//     Stale or unsynced pairs are skipped.
+//   VALIDACIÓN DE FRAMES:
+//     Antes de procesar, el pipeline verifica:
+//     1. Ambos frames no están vacíos.
+//     2. Ambos frames son frescos (edad < maxFrameAgeMs).
+//     3. Las marcas de tiempo están sincronizadas (|t_L - t_R| < maxSyncDiffMs).
+//     Pares viejos o desincronizados son omitidos.
 //
-//   SGBM PARAM UPDATES:
-//     setParams() signals the processing thread via paramsChanged_ flag.
-//     The thread applies new params at the START of the next iteration,
-//     not mid-computation. No mutex needed for params (atomic flag + copy).
+//   ACTUALIZACIONES DE PARÁMETROS SGBM:
+//     setParams() le avisa al hilo de procesamiento vía el flag paramsChanged_.
+//     El hilo aplica los nuevos parámetros al INICIO de la siguiente iteración,
+//     no en medio de cálculos. No se necesita mutex para parámetros 
+//     (flag atómico + copia).
 // ─────────────────────────────────────────────────────────────────────────────
 class LivePipeline {
 public:
 
-    // Configuration
+    // Configuración
     struct Config {
-        double maxFrameAgeMs  = 500.0;  // reject frames older than this
-        double maxSyncDiffMs  = 100.0;  // reject pairs with > this timestamp gap
-        bool   showRectified  = false;  // show rectified frames alongside disparity
-        bool   showDepth      = true;   // compute and show depth map
+        double maxFrameAgeMs  = 500.0;  // rechazar frames más viejos que esto
+        double maxSyncDiffMs  = 100.0;  // rechazar pares con > esta brecha de tiempo
+        bool   showRectified  = false;  // mostrar frames rectificados junto a disparidad
+        bool   showDepth      = true;   // calcular y mostrar mapa de profundidad
     };
 
-    // Per-frame result — everything the display thread needs
+    // Resultado por frame — todo lo que necesita el hilo de visualización
     struct Result {
-        cv::Mat disparity;      // raw 16S disparity from SGBM
-        cv::Mat dispVis;        // 8-bit false-color disparity
-        cv::Mat depthM;         // CV_32F depth in meters (or empty)
-        cv::Mat depthVis;       // 8-bit false-color depth (or empty)
-        cv::Mat rectLeft;       // rectified left frame (if showRectified)
-        cv::Mat rectRight;      // rectified right frame (if showRectified)
+        cv::Mat disparity;      // disparidad 16S cruda de SGBM
+        cv::Mat dispVis;        // disparidad en falso color (8-bit)
+        cv::Mat depthM;         // profundidad CV_32F en metros (o vacío)
+        cv::Mat depthVis;       // profundidad en falso color (8-bit, o vacío)
+        cv::Mat rectLeft;       // frame izquierdo rectificado (si showRectified)
+        cv::Mat rectRight;      // frame derecho rectificado (si showRectified)
 
-        double  processingMs  = 0.0;  // time for one full rectify+SGBM+depth cycle
+        double  processingMs  = 0.0;  // tiempo de un ciclo rectificar+SGBM+profundidad
         int     frameIndex    = 0;
-        int     droppedFrames = 0;    // frames skipped due to age/sync issues
+        int     droppedFrames = 0;    // frames saltados por problemas de edad/sync
     };
 
     // ─────────────────────────────────────────────────────────────────────────
     LivePipeline(Rectifier& rectifier, SGBMProcessor& sgbm, const Config& cfg);
     ~LivePipeline();
 
-    // Start the processing thread. Cameras must already be streaming.
+    // Iniciar el hilo de procesamiento. Las cámaras deben estar ya transmitiendo.
     void start(CameraStream& camL, CameraStream& camR);
 
-    // Signal stop and join the processing thread. Blocks until done.
+    // Señalar parada y hacer join del hilo de procesamiento. Bloquea hasta finalizar.
     void stop();
 
-    // Thread-safe: copy the latest result. Returns false if no result yet.
+    // Thread-safe: copia el último resultado. Retorna false si no hay resultado aún.
     bool getLatest(Result& out) const;
 
-    // Thread-safe: update SGBM parameters. Applied at next frame boundary.
+    // Thread-safe: actualiza parámetros SGBM. Aplicado en el siguiente frame.
     void setParams(const SGBMProcessor::Params& p);
 
     bool isRunning() const { return running_.load(); }
 
-    // Runtime metrics
+    // Métricas en tiempo de ejecución
     struct Metrics {
         double avgProcessingMs = 0.0;
         double actualFPS       = 0.0;
@@ -110,22 +111,22 @@ private:
     std::thread       thread_;
     std::atomic<bool> running_{false};
 
-    // Single-slot result buffer
+    // Buffer de resultado de un solo slot
     mutable std::mutex resultMtx_;
     Result             latestResult_;
     bool               hasResult_ = false;
 
-    // Parameter update signaling
+    // Señalización de actualización de parámetros
     std::mutex              paramsMtx_;
     SGBMProcessor::Params   pendingParams_;
     std::atomic<bool>       paramsChanged_{false};
 
-    // Metrics (approximate — no mutex, slight data races OK for display)
+    // Métricas (aproximadas — sin mutex, leves desincronizaciones están bien para UI)
     mutable Metrics metrics_;
 
-    void loop();  // processing thread body
+    void loop();  // cuerpo del hilo de procesamiento
 
-    // Returns true if frames are fresh and synchronized
+    // Retorna true si los frames están frescos y sincronizados
     bool framesValid(const cv::Mat& fL, const cv::Mat& fR,
                      std::chrono::steady_clock::time_point tsL,
                      std::chrono::steady_clock::time_point tsR) const;

@@ -3,53 +3,53 @@
 #include <string>
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CalibrationConfig — single source of truth for all pipeline parameters.
+// CalibrationConfig — fuente única de verdad para todos los parámetros del pipeline.
 //
-// Organized by phase so you know exactly which values affect which step.
+// Organizado por fase para saber exactamente qué valores afectan cada paso.
 // ─────────────────────────────────────────────────────────────────────────────
 struct CalibrationConfig {
 
-    // ── Chessboard ───────────────────────────────────────────────────────────
-    cv::Size boardSize{9, 6};     // inner corners (not squares)
-    float    squareSizeM = 0.025f; // physical square size in METERS (25mm)
+    // ── Tablero de ajedrez ───────────────────────────────────────────────────
+    cv::Size boardSize{9, 6};      // esquinas internas (no cuadros)
+    float    squareSizeM = 0.025f; // tamaño físico del cuadro en METROS (25mm)
 
-    // ── Session ──────────────────────────────────────────────────────────────
+    // ── Sesión ───────────────────────────────────────────────────────────────
     int         targetPairs = 30;
-    std::string datasetDir  = "calib_pairs";   // root for left/ and right/ images
+    std::string datasetDir  = "calib_pairs";   // raíz para imágenes left/ y right/
 
-    // ── Output YAMLs ─────────────────────────────────────────────────────────
-    // Phase 1 — individual calibration
+    // ── Archivos YAML de salida ───────────────────────────────────────────────
+    // Fase 1 — calibración individual
     std::string leftYaml  = "calib_pairs/calib/left.yaml";
     std::string rightYaml = "calib_pairs/calib/right.yaml";
-    // Phase 2 — stereo calibration
+    // Fase 2 — calibración estéreo
     std::string stereoYaml = "calib_pairs/calib/stereo.yaml";
 
-    // ── Detection flags ──────────────────────────────────────────────────────
+    // ── Flags de detección ───────────────────────────────────────────────────
     int findFlags = cv::CALIB_CB_ADAPTIVE_THRESH
                   | cv::CALIB_CB_NORMALIZE_IMAGE
                   | cv::CALIB_CB_FAST_CHECK;
 
-    // ── Sub-pixel refinement ─────────────────────────────────────────────────
+    // ── Refinamiento sub-píxel ───────────────────────────────────────────────
     cv::TermCriteria subPixCriteria{
         cv::TermCriteria::EPS + cv::TermCriteria::MAX_ITER,
         30, 0.001
     };
     cv::Size subPixWinSize{11, 11};
 
-    // ── CLAHE (illumination compensation) ────────────────────────────────────
-    // When the mean frame brightness drops below brightnessThreshold,
-    // CLAHE is applied before corner detection to recover contrast.
-    // Safe to leave on — CLAHE is a no-op on well-lit frames.
-    bool   autoEnhance        = true;
-    float  brightnessThreshold = 80.0f;  // 0–255 mean pixel value
-    double claheClipLimit      = 2.0;    // higher = more aggressive
+    // ── CLAHE (compensación de iluminación) ──────────────────────────────────
+    // Cuando el brillo medio del frame cae por debajo de brightnessThreshold,
+    // se aplica CLAHE antes de la detección de esquinas para recuperar el contraste.
+    // Se puede dejar activado siempre — CLAHE no hace nada en frames bien iluminados.
+    bool   autoEnhance         = true;
+    float  brightnessThreshold = 80.0f;  // valor medio del píxel: 0–255
+    double claheClipLimit      = 2.0;    // mayor valor = más agresivo
     cv::Size claheTileSize{8, 8};
 
-    // ── Capture ───────────────────────────────────────────────────────────────
-    int cooldownMs = 800;  // min ms between captures (prevents double-trigger)
+    // ── Captura ───────────────────────────────────────────────────────────────
+    int cooldownMs = 800;  // ms mínimos entre capturas (previene doble disparo)
 
-    // ── Stereo calibration flags ─────────────────────────────────────────────
-    // FIX_INTRINSIC: use K/dist from Phase 1 as-is, only optimize R/T.
-    // This is the correct approach when individual calibration was good.
+    // ── Flags de calibración estéreo ─────────────────────────────────────────
+    // FIX_INTRINSIC: usa K/distorsión de la Fase 1 tal cual, solo optimiza R/T.
+    // Es el enfoque correcto cuando la calibración individual fue buena.
     int stereoFlags = cv::CALIB_FIX_INTRINSIC;
 };

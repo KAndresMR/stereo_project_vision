@@ -6,43 +6,43 @@
 #include "ChessboardDetector.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
-// StereoCalibrator — Phase 2 of the pipeline
+// StereoCalibrator — Fase 2 del pipeline
 //
-// Responsibility:
-//   Given a stereo image dataset and pre-computed individual intrinsics
-//   (from MonoCalibrator), compute the geometric relationship between
-//   the two cameras: rotation R, translation T, essential matrix E,
-//   and fundamental matrix F.
+// Responsabilidad:
+//   Dado un dataset de imágenes estéreo y las propiedades intrínsecas individuales 
+//   precalculadas (desde MonoCalibrator), calcular la relación geométrica entre
+//   las dos cámaras: rotación R, traslación T, matriz esencial E, y matriz
+//   fundamental F.
 //
-// What it does NOT do:
-//   - individual camera calibration  (MonoCalibrator)
-//   - rectification                  (Rectifier)
-//   - disparity or depth             (SGBMProcessor)
+// Lo que NO hace:
+//   - calibración de cámara individual       (MonoCalibrator)
+//   - rectificación                          (Rectifier)
+//   - disparidad o profundidad               (SGBMProcessor)
 //
-// Key design decision: CALIB_FIX_INTRINSIC
-//   We fix K_left, dist_left, K_right, dist_right to their pre-computed
-//   values and only optimize R and T. This is the correct professional
-//   approach — it gives more stable geometry with smaller datasets.
+// Decisión clave de diseño: CALIB_FIX_INTRINSIC
+//   Fijamos K_left, dist_left, K_right, dist_right a sus valores precalculados
+//   y solo optimizamos R y T. Este es el enfoque profesional correcto —
+//   produce una geometría más estable con datasets más pequeños.
 //
-// Usage:
+// Uso:
 //   StereoCalibrator sc(config);
 //   auto result = sc.calibrate();
-//   if (result.success) sc.saveYAML(result);
+//   if (result.success) sc.saveYAML(result); 
 // ─────────────────────────────────────────────────────────────────────────────
 class StereoCalibrator {
 public:
 
-    // ── Result ────────────────────────────────────────────────────────────────
+    // ── Resultado ─────────────────────────────────────────────────────────────
     struct Result {
         bool success = false;
 
-        cv::Mat R;           // 3×3  rotation:    right camera relative to left
-        cv::Mat T;           // 3×1  translation: right camera origin in left coords (meters)
-        cv::Mat E;           // 3×3  essential matrix
-        cv::Mat F;           // 3×3  fundamental matrix
+        cv::Mat R;           // Rotacion 3×3:   camara derecha relativa a la izquierda
+        cv::Mat T;           // Traslacion 3×1: origen camara derecha en coords de la izq (metros)
+        cv::Mat E;           // Matriz esencial 3×3
+        cv::Mat F;           // Matriz fundamental 3×3
 
-        double rpe        = 0.0;  // RMS stereo reprojection error
-        double baselineM  = 0.0;  // |T| in meters (≈ physical separation)
+        double rpe        = 0.0;  // Error de reproyeccion RMS estereo
+        double baselineM  = 0.0;  // |T| en metros (≈ separacion fisica)
         int    pairsUsed  = 0;
         int    pairsTotal = 0;
         cv::Size imageSize;
@@ -50,12 +50,12 @@ public:
 
     explicit StereoCalibrator(const CalibrationConfig& config);
 
-    // Full offline pipeline: loads intrinsics, detects pairs, runs stereoCalibrate.
+    // Pipeline completo offline: carga intrínsecas, detecta pares, ejecuta stereoCalibrate.
     Result calibrate() const;
 
-    // Persist R, T, E, F, Q, R1, R2, P1, P2 to stereo.yaml.
-    // Also runs stereoRectify internally to compute and save Q matrix,
-    // so everything needed for the next phase is in one file.
+    // Guarda R, T, E, F, Q, R1, R2, P1, P2 en stereo.yaml.
+    // También ejecuta internamente stereoRectify para calcular y guardar la matriz Q,
+    // de manera que todo lo necesario para la siguiente fase esté en un solo archivo.
     bool saveYAML(const Result& result) const;
 
     void printSummary(const Result& result) const;
@@ -64,13 +64,13 @@ private:
     CalibrationConfig  config_;
     ChessboardDetector detector_;
 
-    // Load K and distCoeffs from left.yaml / right.yaml.
+    // Carga K y distCoeffs desde left.yaml / right.yaml.
     bool loadIntrinsics(cv::Mat& K_left,  cv::Mat& dist_left,
                         cv::Mat& K_right, cv::Mat& dist_right,
                         cv::Size& imageSize) const;
 
-    // Detect corners simultaneously in one stereo pair.
-    // Returns true only if BOTH images produce a full set of corners.
+    // Detecta esquinas simultáneamente en un par estéreo.
+    // Retorna true solo si AMBAS imágenes producen un conjunto completo de esquinas.
     bool detectPair(const std::string& leftPath,
                     const std::string& rightPath,
                     std::vector<cv::Point2f>& cornersL,

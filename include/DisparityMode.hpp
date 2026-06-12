@@ -2,5 +2,5 @@
 #include "CameraStream.hpp"
 #include "CalibrationConfig.hpp"
 
-// Runs the live disparity (SGBM) mode with AR target tracking and dashboard
+// Ejecuta el modo de disparidad en vivo (SGBM) con seguimiento de objetivos AR y panel de control
 void runLiveDisparity(CameraStream& cam1, CameraStream& cam2, const CalibrationConfig& config);

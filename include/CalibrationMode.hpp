@@ -5,16 +5,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // runCalibrationMode
 //
-// Self-contained interactive loop for stereo calibration image capture.
-// Reads frames from both streams, runs chessboard detection on each,
-// shows a side-by-side view with overlays, and captures pairs on SPACE.
+// Bucle interactivo autónomo para captura de imágenes de calibración estéreo.
+// Lee frames de ambos streams, ejecuta detección de tablero en cada uno,
+// muestra vista lado a lado con información y captura pares presionando ESPACIO.
 //
-// Returns when:
-//   - ESC is pressed, OR
-//   - session.isComplete() (targetPairs reached)
+// Retorna cuando:
+//   - Se presiona ESC, O
+//   - session.isComplete() (se alcanza el objetivo de pares)
 //
-// cam1 = LEFT camera stream (already running in its own thread)
-// cam2 = RIGHT camera stream (already running in its own thread)
+// cam1 = Stream cámara IZQUIERDA (ya corriendo en su propio hilo)
+// cam2 = Stream cámara DERECHA (ya corriendo en su propio hilo)
 // ─────────────────────────────────────────────────────────────────────────────
 void runCalibrationMode(CameraStream& cam1, CameraStream& cam2,
                         const CalibrationConfig& config);

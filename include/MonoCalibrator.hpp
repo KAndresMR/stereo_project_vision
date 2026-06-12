@@ -6,18 +6,18 @@
 #include "ChessboardDetector.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MonoCalibrator — Phase 1 of the stereo pipeline
+// MonoCalibrator — Fase 1 del pipeline estéreo
 //
-// Responsibility: given a folder of chessboard images from ONE camera,
-// compute the intrinsic matrix K and distortion coefficients, then
-// save them to a YAML file.
+// Responsabilidad: dada una carpeta de imágenes del tablero de ajedrez
+// de UNA sola cámara, calcular la matriz intrínseca K y los coeficientes de
+// distorsión, y luego guardarlos en un archivo YAML.
 //
-// What it does NOT do:
-//   - capture images (that is CalibrationMode's job)
-//   - stereo geometry (that is StereoCalibrator's job)
-//   - rectification or disparity (later phases)
+// Lo que NO hace:
+//   - capturar imágenes (eso es trabajo de CalibrationMode)
+//   - geometría estéreo (eso es trabajo de StereoCalibrator)
+//   - rectificación o disparidad (fases posteriores)
 //
-// Usage:
+// Uso:
 //   MonoCalibrator mc(config);
 //   auto result = mc.calibrate(MonoCalibrator::Side::LEFT);
 //   if (result.success) mc.saveYAML(result, MonoCalibrator::Side::LEFT);
@@ -25,59 +25,59 @@
 class MonoCalibrator {
 public:
 
-    // Which camera to calibrate in this run.
+    // Qué cámara calibrar en esta ejecución.
     enum class Side { LEFT, RIGHT };
 
-    // ── Result struct ─────────────────────────────────────────────────────────
+    // ── Struct de resultado ───────────────────────────────────────────────────
     struct Result {
         bool success = false;
 
-        cv::Mat  cameraMatrix;   // 3×3 intrinsic matrix K
-        cv::Mat  distCoeffs;     // distortion coefficients [k1,k2,p1,p2,k3]
-        cv::Size imageSize;      // size of the images used (needed for stereoCalibrate later)
+        cv::Mat  cameraMatrix;   // matriz intrínseca K de 3×3
+        cv::Mat  distCoeffs;     // coeficientes de distorsión [k1,k2,p1,p2,k3]
+        cv::Size imageSize;      // tamaño de las imágenes usadas (necesario para stereoCalibrate luego)
 
-        double rpe          = 0.0;  // RMS reprojection error (lower = better)
-        int    imagesUsed   = 0;    // images where corners were detected
-        int    imagesTotal  = 0;    // total images found in the folder
+        double rpe          = 0.0;  // error de reproyección RMS (menor = mejor)
+        int    imagesUsed   = 0;    // imágenes donde se detectaron esquinas
+        int    imagesTotal  = 0;    // total de imágenes encontradas en la carpeta
 
-        // Which image files were SKIPPED (failed detection) — useful for cleanup.
+        // Qué archivos de imagen fueron OMITIDOS (detección fallida) — útil para limpieza.
         std::vector<std::string> skippedImages;
     };
 
     // ─────────────────────────────────────────────────────────────────────────
     explicit MonoCalibrator(const CalibrationConfig& config);
 
-    // Run the full calibration pipeline for one side.
-    // Logs everything — you do not need to add any prints around this call.
+    // Ejecuta el pipeline completo de calibración para un lado.
+    // Registra todo en log — no es necesario agregar impresiones alrededor de esta llamada.
     Result calibrate(Side side) const;
 
-    // Persist result to the YAML path defined in CalibrationConfig.
-    // Returns true on success.
+    // Guarda el resultado en la ruta YAML definida en CalibrationConfig.
+    // Retorna true si tiene éxito.
     bool saveYAML(const Result& result, Side side) const;
 
-    // Print a human-readable summary to stdout.
+    // Imprime un resumen legible por humanos en la salida estándar.
     void printSummary(const Result& result, Side side) const;
 
 private:
     CalibrationConfig  config_;
     ChessboardDetector detector_;
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Funciones auxiliares ──────────────────────────────────────────────────
     std::string imageDir(Side side)  const;
     std::string yamlPath(Side side)  const;
-    std::string sideName(Side side)  const;  // "LEFT" or "RIGHT"
+    std::string sideName(Side side)  const;  // "LEFT" o "RIGHT"
 
-    // Build the known 3-D positions of the chessboard corners.
-    // Z = 0 for all because the board is flat.
+    // Construye las posiciones 3D conocidas de las esquinas del tablero.
+    // Z = 0 para todas porque el tablero es plano.
     std::vector<cv::Point3f> buildObjectPoints() const;
 
-    // Load one image, convert to gray, detect & refine corners.
-    // Returns true if a complete set of corners was found.
+    // Carga una imagen, la convierte a grises, detecta y refina las esquinas.
+    // Retorna true si se encontró el conjunto completo de esquinas.
     bool loadAndDetect(const std::string&         imagePath,
                        std::vector<cv::Point2f>&  outCorners,
                        cv::Size&                  outImageSize) const;
 
-    // Sanity-check the calibration result and warn if values look wrong
-    // for an OV2640 sensor at VGA resolution.
+    // Verificación de coherencia del resultado de calibración y advertencia
+    // si los valores parecen incorrectos para un sensor OV2640 en resolución VGA.
     void validateResult(const Result& result) const;
 };

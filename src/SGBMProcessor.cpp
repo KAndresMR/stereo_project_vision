@@ -8,10 +8,10 @@ SGBMProcessor::SGBMProcessor(const Params& params) : params_(params) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// init — (re)create matchers from current params_
+// init — (re)crea los matchers con los params_ actuales
 //
-// Called at construction and after setParams().
-// Expensive (~1ms) but not per-frame — only on parameter change.
+// Se llama en la construcción y tras setParams().
+// Costoso (~1ms) pero no por frame — solo al cambiar parámetros.
 // ─────────────────────────────────────────────────────────────────────────────
 void SGBMProcessor::init() {
     const int ch = 1;
@@ -38,26 +38,26 @@ void SGBMProcessor::init() {
         params_.mode
     );
 
-    // Right matcher: mirrors the left matcher in the right→left direction.
-    // Required for WLS filter. Cheap to create.
+    // Matcher derecho: espejo del izquierdo en dirección derecha→izquierda.
+    // Requerido para el filtro WLS. Barato de crear.
     if (params_.useWLS) {
         rightMatcher_ = cv::ximgproc::createRightMatcher(leftMatcher_);
         wlsFilter_    = cv::ximgproc::createDisparityWLSFilter(leftMatcher_);
         wlsFilter_->setLambda(params_.wlsLambda);
         wlsFilter_->setSigmaColor(params_.wlsSigma);
-        Log::info("SGBM", "WLS filter enabled (λ=" +
+        Log::info("SGBM", "Filtro WLS activado (λ=" +
                   std::to_string((int)params_.wlsLambda) +
                   " σ=" + std::to_string(params_.wlsSigma) + ")");
     }
 
-    // CLAHE for pre-processing: improves SGBM on low-contrast scenes.×8 is a conservative setting — reduces halos.
+    // CLAHE para pre-procesamiento: mejora SGBM en escenas de bajo contraste.
     clahe_ = cv::createCLAHE();
 
-    // Reset temporal buffer (params may have changed window size)
+    // Reiniciar buffer temporal (los parámetros pueden haber cambiado el tamaño de ventana)
     smoothed_      = cv::Mat{};
     smoothedValid_ = false;
 
-    Log::info("SGBM", "Initialized: numDisp=" +
+    Log::info("SGBM", "Inicializado: numDisp=" +
               std::to_string(params_.numDisparities) +
               " blockSize=" + std::to_string(params_.blockSize) +
               " P1=" + std::to_string(p1) +
@@ -71,18 +71,18 @@ void SGBMProcessor::setParams(const Params& p) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// compute — Step 1
+// compute — Paso 1
 //
-// Applies CLAHE to rectified grayscale images, then runs StereoSGBM.
-// If WLS is enabled, also runs the right matcher here so postprocess()
-// can use rightDisp_ without recomputing.
+// Aplica CLAHE a las imágenes rectificadas en escala de grises y luego ejecuta StereoSGBM.
+// Si WLS está activado, también ejecuta el matcher derecho aquí para que postprocess()
+// pueda usar rightDisp_ sin recalcular.
 //
-// Output: CV_16S disparity map. Real disparity = value / 16.0 pixels.
-// Invalid pixels have value < params_.minDisparity * 16.
+// Salida: mapa de disparidad CV_16S. Disparidad real = valor / 16.0 píxeles.
+// Los píxeles inválidos tienen valor < params_.minDisparity * 16.
 // ─────────────────────────────────────────────────────────────────────────────
 cv::Mat SGBMProcessor::compute(const cv::Mat& rectLeft, const cv::Mat& rectRight) {
-    // Convert to grayscale (SGBM works on grayscale internally anyway,
-    // but accepting colour input is more flexible for the caller)
+    // Convertir a escala de grises (SGBM trabaja internamente en grises,
+    // pero aceptar entrada en color es más flexible para el llamante)
     cv::Mat grayL, grayR;
     if (rectLeft.channels() == 3) {
         cv::cvtColor(rectLeft,  grayL, cv::COLOR_BGR2GRAY);
@@ -103,13 +103,13 @@ cv::Mat SGBMProcessor::compute(const cv::Mat& rectLeft, const cv::Mat& rectRight
     }
     clahe_->apply(grayL, enhL);
     clahe_->apply(grayR, enhR);
-    enhancedL_ = enhL.clone(); // saved for WLS guide and dashboard display
+    enhancedL_ = enhL.clone(); // guardado como guía para WLS y visualización en dashboard
 
-    // Left disparity (primary output)
+    // Disparidad izquierda (salida principal)
     cv::Mat leftDisp;
     leftMatcher_->compute(enhL, enhR, leftDisp);
 
-    // Right disparity (only needed for WLS; store for postprocess())
+    // Disparidad derecha (solo se necesita para WLS; se guarda para postprocess())
     if (params_.useWLS && rightMatcher_) {
         rightMatcher_->compute(enhR, enhL, rightDisp_);
     }
@@ -118,24 +118,24 @@ cv::Mat SGBMProcessor::compute(const cv::Mat& rectLeft, const cv::Mat& rectRight
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// postprocess — Step 2: WLS filter
+// postprocess — Paso 2: filtro WLS
 //
-// The WLS (Weighted Least Squares) filter solves:
+// El filtro WLS (Mínimos Cuadrados Ponderados) resuelve:
 //
 //   argmin_u { ||u - d||² + λ * Σ w_ij(I) * (u_i - u_j)² }
 //
-// where d = raw disparity, w_ij(I) = edge-aware weight from reference image I.
+// donde d = disparidad cruda, w_ij(I) = peso con conciencia de bordes de la imagen I.
 //
-// In plain language:
-//   - It fills holes (where SGBM found no match) by diffusing neighboring
-//     values, guided by image edges (doesn't blur across real depth edges).
-//   - λ controls smoothness: higher → smoother but less detail.
-//   - σ controls edge sensitivity: higher → diffuses more across edges.
+// En lenguaje simple:
+//   - Rellena huecos (donde SGBM no encontró correspondencia) difundiendo valores
+//     vecinos, guiado por los bordes de la imagen (no difumina sobre bordes de profundidad reales).
+//   - λ controla la suavidad: mayor valor → más suave pero menos detalle.
+//   - σ controla la sensibilidad a bordes: mayor valor → difunde más a través de bordes.
 //
-// Why right disparity?
-//   WLS uses the right disparity to compute a confidence map: a pixel is
-//   "confident" if left→right and right→left disparities agree.
-//   Unconfident pixels are filled by the filter, not passed through.
+// ¿Por qué se necesita la disparidad derecha?
+//   WLS usa la disparidad derecha para calcular un mapa de confianza: un píxel es
+//   "confiable" si las disparidades izquierda→derecha y derecha→izquierda coinciden.
+//   Los píxeles no confiables son rellenados por el filtro en lugar de pasarse tal cual.
 // ─────────────────────────────────────────────────────────────────────────────
 cv::Mat SGBMProcessor::postprocess(const cv::Mat& rawDisparity,
                                     const cv::Mat& rectLeft) {
@@ -153,18 +153,18 @@ cv::Mat SGBMProcessor::postprocess(const cv::Mat& rawDisparity,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// temporalSmooth — Step 3: Exponential Moving Average
+// temporalSmooth — Paso 3: Media Móvil Exponencial (EMA)
 //
-// EMA formula: S(t) = α * D(t) + (1-α) * S(t-1)
+// Fórmula EMA: S(t) = α * D(t) + (1-α) * S(t-1)
 //
 // α = temporalAlpha:
-//   - High (0.8–1.0): fast response, minimal smoothing.
-//   - Low  (0.1–0.3): heavy smoothing, ghosting on moving objects.
-//   - 0.4 is a good default for a mostly static scene.
+//   - Alto (0.8–1.0): respuesta rápida, suavizado mínimo.
+//   - Bajo (0.1–0.3): suavizado intenso, efecto fantasma en objetos en movimiento.
+//   - 0.4 es un buen valor por defecto para escenas mayormente estáticas.
 //
-// Works on CV_32F to avoid rounding errors in accumulation.
-// Pixels that were invalid (<=0) in current frame are NOT updated,
-// preserving the last valid estimate — avoids smearing invalid regions.
+// Opera sobre CV_32F para evitar errores de redondeo en la acumulación.
+// Los píxeles inválidos (<=0) en el frame actual NO se actualizan,
+// preservando la última estimación válida — evita difuminar regiones inválidas.
 // ─────────────────────────────────────────────────────────────────────────────
 cv::Mat SGBMProcessor::temporalSmooth(const cv::Mat& filteredDisparity) {
     if (!params_.useTemporalSmoothing) return filteredDisparity;
@@ -178,11 +178,11 @@ cv::Mat SGBMProcessor::temporalSmooth(const cv::Mat& filteredDisparity) {
         return filteredDisparity;
     }
 
-    // Only update pixels that have a valid disparity in the current frame.
-    // Invalid = disparity <= minDisparity * 16 (SGBM convention).
+    // Solo actualizar píxeles que tienen disparidad válida en el frame actual.
+    // Inválido = disparidad <= minDisparity * 16 (convención SGBM).
     cv::Mat validMask = (filteredDisparity > params_.minDisparity * 16);
 
-    // EMA on valid pixels only
+    // EMA solo en píxeles válidos
     float alpha = params_.temporalAlpha;
     cv::Mat blended;
 
@@ -194,93 +194,94 @@ cv::Mat SGBMProcessor::temporalSmooth(const cv::Mat& filteredDisparity) {
         0.0,
         blended);
 
-    // Update ONLY valid pixels
+    // Actualizar SOLO los píxeles válidos
     blended.copyTo(smoothed_, validMask);
 
-    // Write back to invalid pixels (keep last valid estimate there)
-    // — this is the "temporal infill" behavior
+    // Escribir de vuelta a píxeles inválidos (mantener la última estimación válida allí)
+    // — este es el comportamiento de "relleno temporal"
     cv::Mat result;
     smoothed_.convertTo(result, CV_16S);
     return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// visualize — Step 4: 16S disparity → 8-bit false-color
+// visualize — Paso 4: disparidad 16S → imagen en falso color de 8 bits
 //
-// SGBM outputs CV_16S where each value = real_disparity * 16.
-// We divide by 16, clip negative (invalid), scale to 0–255.
-// COLORMAP_TURBO: warm colors = near, cool colors = far.
+// SGBM emite CV_16S donde cada valor = disparidad_real * 16.
+// Dividimos por 16, recortamos negativos (inválidos), escalamos a 0–255.
+// COLORMAP_TURBO: colores cálidos = cerca, colores fríos = lejos.
 // ─────────────────────────────────────────────────────────────────────────────
 cv::Mat SGBMProcessor::visualize(const cv::Mat& disparity) const {
-    // Convert to float, divide by 16 to get real disparity in pixels
+    // Convertir a float, dividir por 16 para obtener la disparidad real en píxeles
     cv::Mat disp32f;
     disparity.convertTo(disp32f, CV_32F, 1.0 / 16.0);
 
-    // Clip negatives (invalid regions)
+    // Recortar negativos e inválidos (píxeles < minDisparity*16 en 16S = inválidos en SGBM)
+    cv::Mat invalid = (disparity <= params_.minDisparity * 16);
     cv::threshold(disp32f, disp32f, 0.0, 0.0, cv::THRESH_TOZERO);
 
-    // Normalize to 0–255 and apply greyscale (TURBO colormap available via applyColorMap)
-    double maxDisp = params_.numDisparities;
+    // Normalización RELATIVA: lo más lejano válido → 0 (azul), lo más cercano → 255 (rojo)
+    // Esto asegura que el objeto más cercano en escena siempre se vea rojo,
+    // independientemente de las distancias absolutas.
     cv::Mat disp8u;
-    disp32f.convertTo(disp8u, CV_8U, 255.0 / maxDisp);
+    cv::normalize(disp32f, disp8u, 0, 255, cv::NORM_MINMAX, CV_8U, ~invalid);
 
-    // Black out invalid pixels BEFORE color mapping to ensure they don't get mapped to a color
-    cv::Mat invalid = (disparity <= params_.minDisparity * 16);
+    // Poner en negro los píxeles inválidos ANTES del mapeo de color
     disp8u.setTo(0, invalid);
 
     cv::Mat colored;
     cv::applyColorMap(disp8u, colored, cv::COLORMAP_TURBO);
-    
-    // Black out invalid pixels again on the colored image (applyColorMap turns 0 into dark blue usually)
+
+    // Poner en negro los píxeles inválidos también en la imagen coloreada
     colored.setTo(cv::Scalar(0, 0, 0), invalid);
 
     return colored;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// toDepth — Disparity → real depth in meters via Q matrix
+// toDepth — Disparidad → profundidad real en metros via matriz Q
 //
-// The Q matrix from stereoRectify encodes:
+// La matriz Q de stereoRectify codifica:
 //   Z = f * B / d
-// where f = focal length, B = baseline, d = disparity.
+// donde f = distancia focal, B = baseline, d = disparidad.
 //
-// reprojectImageTo3D computes (X, Y, Z) for every pixel.
-// We extract only Z (depth) and apply range clipping.
+// reprojectImageTo3D calcula (X, Y, Z) para cada píxel.
+// Solo extraemos Z (profundidad) y aplicamos recorte de rango.
 //
-// Invalid pixels: disparity <= 0 after conversion → set depth = 0.
+// Píxeles inválidos: disparidad <= 0 tras conversión → profundidad = 0.
 // ─────────────────────────────────────────────────────────────────────────────
 cv::Mat SGBMProcessor::toDepth(const cv::Mat& disparity,
                                 const cv::Mat& Q) const {
-    // Convert disparity to float (real disparity in pixels)
+    // Convertir disparidad a float (disparidad real en píxeles)
     cv::Mat disp32f;
     disparity.convertTo(disp32f, CV_32F, 1.0 / 16.0);
 
-    // reprojectImageTo3D: for each pixel, compute (X, Y, Z) in camera coords
-    // handleMissingValues=true: sets out-of-range pixels to 10000
+    // reprojectImageTo3D: para cada píxel, calcula (X, Y, Z) en coordenadas de cámara
+    // handleMissingValues=true: pone los píxeles fuera de rango en 10000
     cv::Mat points3D;
     cv::reprojectImageTo3D(disp32f, points3D, Q, true);
 
-    // Extract Z channel (depth in meters)
+    // Extraer canal Z (profundidad en metros)
     cv::Mat channels[3];
     cv::split(points3D, channels);
     cv::Mat depthM = channels[2];
 
-    // Mask: valid disparity AND depth in expected range
-    cv::Mat validDisp = (disp32f > 0.0f);
+    // Máscara: disparidad válida Y profundidad en rango esperado
+    cv::Mat validDisp  = (disp32f > 0.0f);
     cv::Mat validDepth = (depthM > params_.minDepthM) &
                          (depthM < params_.maxDepthM);
     cv::Mat valid = validDisp & validDepth;
 
-    // Zero out invalid pixels
+    // Poner en cero los píxeles inválidos
     depthM.setTo(0.0f, ~valid);
-    return depthM;  // CV_32F, meters
+    return depthM;  // CV_32F, en metros
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// visualizeDepth — depth map → false-color image for display
+// visualizeDepth — mapa de profundidad → imagen en falso color para visualización
 //
-// Linear scale: minDepthM → blue (far), maxDepthM → red (near).
-// Invalid (zero) pixels shown as black.
+// Escala lineal: minDepthM → azul (lejos), maxDepthM → rojo (cerca).
+// Los píxeles inválidos (cero) se muestran en negro.
 // ─────────────────────────────────────────────────────────────────────────────
 cv::Mat SGBMProcessor::visualizeDepth(const cv::Mat& depthM) const {
     cv::Mat normalized;
@@ -291,7 +292,7 @@ cv::Mat SGBMProcessor::visualizeDepth(const cv::Mat& depthM) const {
     cv::Mat colored;
     cv::applyColorMap(normalized, colored, cv::COLORMAP_JET);
 
-    // Black out invalid pixels (depth == 0)
+    // Poner en negro los píxeles inválidos (profundidad == 0)
     colored.setTo(cv::Scalar(0,0,0), depthM == 0.0f);
 
     return colored;

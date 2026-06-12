@@ -11,7 +11,7 @@
 #include <string>
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Internal types
+// Tipos Internos
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct StereoFrames {
@@ -35,11 +35,11 @@ struct PoseMetrics {
 };
 
 struct CoverageTracker {
-    // Spatial
+    // Espacial
     bool top = false, bottom = false, left = false, right = false, center = false;
-    // Scale
+    // Escala
     bool near = false, mid = false, far = false;
-    // Rotation
+    // Rotación
     bool tiltLeft = false, tiltRight = false, flat = false;
 };
 
@@ -118,32 +118,28 @@ static void updateCoverage(CoverageTracker& cov, const PoseMetrics& pose,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// drawHUD — status overlay on a calibration frame
+// drawHUD — capa de estado sobre el frame de calibración
 // ─────────────────────────────────────────────────────────────────────────────
 static void drawHUD(cv::Mat& frame, bool bothValid, int done, int target, double fps) {
-    // Valid/Invalid pill
+    // Indicador Válido/Inválido
     cv::Scalar clr = bothValid ? cv::Scalar(0,220,0) : cv::Scalar(0,50,220);
     cv::rectangle(frame, {10,8}, {bothValid ? 110 : 140, 48}, clr, cv::FILLED);
-    cv::putText(frame, bothValid ? "VALID" : "INVALID", {18,38},
+    cv::putText(frame, bothValid ? "VALIDO" : "INVALIDO", {18,38},
                 cv::FONT_HERSHEY_SIMPLEX, 0.9, {255,255,255}, 2);
 
-    // Pair counter
-    cv::putText(frame, "Pairs: " + std::to_string(done) + " / " + std::to_string(target),
+    // Contador de pares
+    cv::putText(frame, "Pares: " + std::to_string(done) + " / " + std::to_string(target),
                 {10,72}, cv::FONT_HERSHEY_SIMPLEX, 0.65, {255,255,255}, 2);
 
     // FPS
     cv::putText(frame, "FPS: " + std::to_string((int)fps),
                 {frame.cols - 110, 30}, cv::FONT_HERSHEY_SIMPLEX, 0.65, {0,255,255}, 1);
 
-    // Bottom bar
+    // Barra inferior
     cv::rectangle(frame, {0, frame.rows-30}, {frame.cols, frame.rows}, {30,30,30}, cv::FILLED);
-    cv::putText(frame, "SPACE: capture   ESC: exit",
+    cv::putText(frame, "ESPACIO: capturar   ESC: salir",
                 {10, frame.rows-9}, cv::FONT_HERSHEY_SIMPLEX, 0.5, {200,200,200}, 1);
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// (Coverage Overlay Removed per user request to clean UI)
-// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // renderCalibrationUI
@@ -155,7 +151,6 @@ static cv::Mat renderCalibrationUI(StereoFrames& f, const StereoDetection& det,
                                    CoverageTracker& cov) {
     drawHUD(f.dispLeft,  det.bothValid, session.pairCount(), config.targetPairs, cam1.fps);
     drawHUD(f.dispRight, det.bothValid, session.pairCount(), config.targetPairs, cam2.fps);
-    // Coverage overlay removed to keep UI clean
 
     cv::Mat combined;
     cv::hconcat(f.dispLeft, f.dispRight, combined);
@@ -163,17 +158,17 @@ static cv::Mat renderCalibrationUI(StereoFrames& f, const StereoDetection& det,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// flashCapture — green border flash on capture
+// flashCapture — parpadeo del borde en verde al capturar
 // ─────────────────────────────────────────────────────────────────────────────
 static void flashCapture(const cv::Mat& combined) {
     cv::Mat flash = combined.clone();
     cv::rectangle(flash, {0,0}, {flash.cols-1, flash.rows-1}, {0,255,0}, 10);
-    cv::imshow("Stereo Calibration", flash);
+    cv::imshow("Calibracion Estereo", flash);
     cv::waitKey(200);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// handleCapture — triggered on SPACE key
+// handleCapture — se activa con la tecla ESPACIO
 // ─────────────────────────────────────────────────────────────────────────────
 static void handleCapture(int key, const StereoDetection& det, StereoFrames& f,
                           CalibrationSession& session, const CalibrationConfig& config,
@@ -190,22 +185,22 @@ static void handleCapture(int key, const StereoDetection& det, StereoFrames& f,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// handleExit — triggered on ESC key
+// handleExit — se activa con la tecla ESC
 // ─────────────────────────────────────────────────────────────────────────────
 static bool handleExit(int key, const CalibrationSession& session) {
     if (key != 27) return false;
-    std::cout << "[CalibMode] Aborted. " << session.pairCount() << " pairs saved.\n";
+    std::cout << "[CalibMode] Abortado. " << session.pairCount() << " pares guardados.\n";
     return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// runCalibrationMode — public entry point
+// runCalibrationMode — punto de entrada público
 // ─────────────────────────────────────────────────────────────────────────────
 void runCalibrationMode(CameraStream& cam1, CameraStream& cam2,
                         const CalibrationConfig& config) {
     ChessboardDetector detector(config);
 
-    std::cout << "\n[N] New dataset\n[M] Append dataset\n";
+    std::cout << "\n[N] Nuevo dataset\n[M] Anexar a dataset existente\n";
     char choice;
     std::cin >> choice;
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
@@ -215,7 +210,7 @@ void runCalibrationMode(CameraStream& cam1, CameraStream& cam2,
     if (!appendMode) {
         std::filesystem::remove_all(config.datasetDir + "/left");
         std::filesystem::remove_all(config.datasetDir + "/right");
-        std::cout << "[CalibMode] Previous dataset removed.\n";
+        std::cout << "[CalibMode] Dataset anterior eliminado.\n";
     }
 
     CalibrationSession session(config);
@@ -224,10 +219,10 @@ void runCalibrationMode(CameraStream& cam1, CameraStream& cam2,
 
     std::cout
         << "\n[CalibMode] ════════════════════════════════════\n"
-        << "[CalibMode] Board : " << config.boardSize.width << "×" << config.boardSize.height << " inner corners\n"
-        << "[CalibMode] Square: " << config.squareSizeM * 1000.0f << " mm\n"
-        << "[CalibMode] Target: " << targetPairs << " pairs\n"
-        << "[CalibMode] SPACE = capture | ESC = exit\n"
+        << "[CalibMode] Tablero: " << config.boardSize.width << "×" << config.boardSize.height << " esquinas internas\n"
+        << "[CalibMode] Cuadro : " << config.squareSizeM * 1000.0f << " mm\n"
+        << "[CalibMode] Objetiv: " << targetPairs << " pares\n"
+        << "[CalibMode] ESPACIO = capturar | ESC = salir\n"
         << "[CalibMode] ════════════════════════════════════\n\n";
 
     using Clock = std::chrono::steady_clock;
@@ -246,14 +241,14 @@ void runCalibrationMode(CameraStream& cam1, CameraStream& cam2,
 
         cv::Mat combined = renderCalibrationUI(frames, detection, session, config,
                                                cam1, cam2, coverage);
-        cv::imshow("Stereo Calibration", combined);
+        cv::imshow("Calibracion Estereo", combined);
 
         int key = cv::waitKey(1);
         if (handleExit(key, session)) return;
         handleCapture(key, detection, frames, session, config, lastCapture, combined);
     }
 
-    std::cout << "[CalibMode] Done! " << session.pairCount()
-              << " pairs in '" << config.datasetDir << "'\n"
-              << "[CalibMode] Next step: run stereoCalibrate on these pairs.\n";
+    std::cout << "[CalibMode] Listo! " << session.pairCount()
+              << " pares en '" << config.datasetDir << "'\n"
+              << "[CalibMode] Siguiente paso: ejecutar calibracion estereo en estos pares.\n";
 }

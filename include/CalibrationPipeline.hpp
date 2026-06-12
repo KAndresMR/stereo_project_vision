@@ -1,6 +1,6 @@
 #pragma once
 #include "CalibrationConfig.hpp"
 
-// Runs the full calibration pipeline: Mono Calibration for Left and Right,
-// followed immediately by Stereo Calibration.
+// Ejecuta el pipeline completo de calibración: Calibración Monocular para Izquierda y Derecha,
+// seguido inmediatamente de la Calibración Estéreo.
 void runFullCalibration(const CalibrationConfig& config);
