@@ -1,1 +1,29 @@
-/build
+# Compilación de C++ (CMake)
+build/
+*/build/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+*.cmake
+cmake_install.cmake
+*.o
+*.out
+
+# Entornos de desarrollo y SO
+.DS_Store
+.vscode/
+.idea/
+
+# Archivos pesados o innecesarios para el repositorio
+dataset/
+*/dataset/
+positives/
+negatives/
+evidencias/
+*.mp4
+*.avi
+
+# Archivos de caché de Python y Jupyter
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
