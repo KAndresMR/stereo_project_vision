@@ -10,10 +10,12 @@
 #include <chrono>
 #include <curl/curl.h>
 #include <mach/mach.h> // Librería nativa de macOS para medir RAM (Apple Silicon)
+#include <cstdio>
 
-// -----------------------------------------------------------------------------
-// 1. UTILIDAD: Medir Consumo de RAM en macOS
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Medición de memoria residente del proceso (API Mach de macOS).
+// Devuelve el consumo actual en megabytes.
+// ---------------------------------------------------------------------------
 double getMemoryUsageMB() {
     struct task_basic_info t_info;
     mach_msg_type_number_t t_info_count = TASK_BASIC_INFO_COUNT;
@@ -23,11 +25,11 @@ double getMemoryUsageMB() {
     return static_cast<double>(t_info.resident_size) / (1024.0 * 1024.0);
 }
 
-// -----------------------------------------------------------------------------
-// 2. COMUNICACIÓN: Enviar datos vía HTTP POST (cURL)
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Envío de evidencias (imagen y video) vía HTTP POST utilizando libcurl.
+// ---------------------------------------------------------------------------
 void sendAlertToBot(const std::string& imagePath, const std::string& videoPath) {
-    std::cout << "[HTTP] Preparando envío a la API del Bot...\n";
+    std::cout << "[HTTP] Preparando envío al servidor...\n";
     CURL* curl = curl_easy_init();
     if (curl) {
         curl_mime* form = curl_mime_init(curl);
@@ -43,15 +45,15 @@ void sendAlertToBot(const std::string& imagePath, const std::string& videoPath) 
         curl_mime_name(field, "video");
         curl_mime_filedata(field, videoPath.c_str());
 
-        // Endpoint del servidor Python (Fase 4)
-        curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:5000/trigger");
+        // Endpoint del servidor Python de recepción y segmentación
+        curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:5001/trigger");
         curl_easy_setopt(curl, CURLOPT_MIMEPOST, form);
 
         CURLcode res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
-            std::cerr << "[HTTP] ❌ Error enviando datos: " << curl_easy_strerror(res) << "\n";
+            std::cerr << "[HTTP] [ERROR] Falló el envío de datos: " << curl_easy_strerror(res) << "\n";
         } else {
-            std::cout << "[HTTP] ✅ Alerta enviada con éxito.\n";
+            std::cout << "[HTTP] [OK] Alerta enviada con éxito.\n";
         }
 
         curl_mime_free(form);
@@ -59,15 +61,20 @@ void sendAlertToBot(const std::string& imagePath, const std::string& videoPath) 
     }
 }
 
-// -----------------------------------------------------------------------------
-// 3. ESTRUCTURAS DE DATOS COMPARTIDOS (Grabación Multihilo)
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Estructuras de sincronización para concurrencia (captura y grabación)
+// ---------------------------------------------------------------------------
 std::mutex qMutex;
 std::queue<cv::Mat> videoQueue;
 std::atomic<bool> isRecording(false);
 std::atomic<bool> stopApp(false);
 
-// Hilo que graba 5 segundos y envía a la API, para no congelar la cámara en vivo
+// Parámetros dinámicos vinculados a la interfaz gráfica (trackbars)
+int hit_thresh_slider = 5;      // Representa 0.5 (x10)
+int nms_conf_slider = 10;       // Representa 1.0 (x10)
+int scale_slider = 115;         // Representa 1.15 (x100)
+
+// Función ejecutada en hilo secundario para grabar clips de evidencia y enviarlos
 void recorderThreadFunc(int fps, cv::Size size) {
     while (!stopApp) {
         if (isRecording) {
@@ -114,8 +121,10 @@ void recorderThreadFunc(int fps, cv::Size size) {
                 while (!videoQueue.empty()) videoQueue.pop();
             }
 
-            std::cout << ">>> [REC] Clip guardado con éxito. Ejecutando Etapa 3.4 (Envío HTTP)...\n";
+            std::cout << ">>> [REC] Clip guardado con éxito. Iniciando transmisión HTTP...\n";
             sendAlertToBot("evidencia_foto.jpg", videoFilename);
+            std::remove("evidencia_foto.jpg");
+            std::remove(videoFilename.c_str());
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
@@ -127,14 +136,14 @@ void recorderThreadFunc(int fps, cv::Size size) {
 // -----------------------------------------------------------------------------
 int main() {
     std::cout << "\n=============================================\n";
-    std::cout << " INICIANDO APLICACIÓN TRIGGER (FASE 3) \n";
+    std::cout << " INICIANDO SISTEMA DE DETECCIÓN EN VIVO \n";
     std::cout << "=============================================\n\n";
 
-    // 1. Etapa 3.2: Cargar el modelo matemático de HOG+SVM
+    // Cargar el modelo clasificador HOG+SVM entrenado previamente
     std::vector<float> svm_weights;
-    std::ifstream file("../svm_hog_weights.txt");
+    std::ifstream file("../svm_hog_weights_128x96.txt");
     if (!file.is_open()) {
-        std::cerr << "❌ [Error] No se encontró el archivo ../svm_hog_weights.txt generado en la Fase 2.\n";
+        std::cerr << "[ERROR] No se encontró el archivo de pesos ../svm_hog_weights_128x96.txt\n";
         return -1;
     }
     
@@ -144,15 +153,15 @@ int main() {
     }
     file.close();
 
-    // Recrear la misma configuración de ventana que usamos en Python
-    cv::HOGDescriptor hog(cv::Size(64, 64), cv::Size(16, 16), cv::Size(8, 8), cv::Size(8, 8), 9);
+    // Configuración del descriptor HOG con las mismas dimensiones del entrenamiento
+    cv::HOGDescriptor hog(cv::Size(128, 96), cv::Size(16, 16), cv::Size(8, 8), cv::Size(8, 8), 9);
     hog.setSVMDetector(svm_weights);
-    std::cout << "✅ [SVM] Modelo cargado con éxito (" << svm_weights.size() << " pesos).\n";
+    std::cout << "[OK] Modelo SVM cargado en memoria (" << svm_weights.size() << " coeficientes).\n";
 
-    // 2. Etapa 3.1: Iniciar Cámara Web de la PC
+    // Inicialización del dispositivo de captura de video
     cv::VideoCapture cap(0);
     if (!cap.isOpened()) {
-        std::cerr << "❌ [Error] No se pudo acceder a la cámara web (índice 0).\n";
+        std::cerr << "[ERROR] No se pudo acceder a la cámara web (índice 0).\n";
         return -1;
     }
     
@@ -164,14 +173,24 @@ int main() {
     if (currentFps <= 0) currentFps = 30; // Fallback si la cámara no reporta FPS
     cv::Size frameSize(cap.get(cv::CAP_PROP_FRAME_WIDTH), cap.get(cv::CAP_PROP_FRAME_HEIGHT));
 
-    // 3. Etapa 3.3: Iniciar Hilo de Grabación de Evidencias
+    // Inicio del hilo asíncrono para gestión de evidencias de video
     std::thread recorderThread(recorderThreadFunc, currentFps, frameSize);
 
-    // 4. Bucle Principal (Evaluación en tiempo real)
+    // Bucle principal de evaluación en tiempo real
     cv::Mat frame, gray;
     double tickFreq = cv::getTickFrequency();
     
-    std::cout << "✅ [SISTEMA] Sistema en línea. Presiona 'q' en la ventana para salir.\n\n";
+    // Configuración de la ventana y barra de controles dinámicos
+    const std::string winName = "Detector HOG+SVM";
+    cv::namedWindow(winName, cv::WINDOW_AUTOSIZE);
+    cv::createTrackbar("Hit Threshold (x10)", winName, &hit_thresh_slider, 30);
+    cv::createTrackbar("NMS Conf (x10)", winName, &nms_conf_slider, 30);
+    cv::createTrackbar("Scale (x100)", winName, &scale_slider, 150);
+
+    // Inicializar CLAHE una sola vez fuera del bucle para evitar asignaciones repetidas en memoria
+    cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
+
+    std::cout << "[INFO] Sistema en línea. Presiona 'q' en la ventana para salir.\n\n";
 
     while (true) {
         int64 t_start = cv::getTickCount();
@@ -179,43 +198,50 @@ int main() {
         cap >> frame;
         if (frame.empty()) break;
 
-        // Si estamos grabando, empujamos el frame limpio (sin letras) a la cola
+        // Almacenar frame limpio en la cola de grabación si el proceso está activo
         if (isRecording) {
             std::lock_guard<std::mutex> lock(qMutex);
             videoQueue.push(frame.clone());
         }
 
-        // HOG requiere escala de grises
+        // Conversión a escala de grises para procesamiento del descriptor HOG
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+        
+        // Aplicación de ecualización adaptativa de histograma (CLAHE)
+        clahe->apply(gray, gray);
 
         std::vector<cv::Rect> found_locations;
         std::vector<double> found_weights;
         
-        // =========================================================================================
-        // 🎛️ ZONA DE TUNING (AJUSTA ESTOS PARÁMETROS PARA ELIMINAR FALSOS POSITIVOS)
-        // =========================================================================================
+        // Lectura de parámetros de calibración en tiempo real desde los controles
+        if (scale_slider <= 100) scale_slider = 101; // Previene bucle infinito por factor de escala <= 1.0
         
-        // 1. PARAMETROS DE BARRIDO HOG
-        double hit_threshold = 1.0;  // Distancia al hiperplano SVM. Súbelo a 2.0 o 3.0 para ser más estricto.
-        cv::Size win_stride(16, 16); // Salto de píxeles. Valores comunes: (8,8), (16,16), (32,32). Mayor salto = menos falsos positivos y más rápido.
-        cv::Size padding(16, 16);    // Padding de la ventana. Déjalo en (16,16) o prueba (8,8).
-        double scale = 1.15;         // Escala de la pirámide (1.05 = minucioso, 1.15 = normal, 1.25 = rápido). Mayor valor = menos falsos positivos.
+        double hit_threshold = static_cast<double>(hit_thresh_slider) / 10.0;
+        double scale = static_cast<double>(scale_slider) / 100.0;
+        cv::Size win_stride(16, 16); 
+        cv::Size padding(16, 16);    
 
-        // Ejecutamos el barrido en TODA la imagen (frame a frame) como dice la rúbrica
-        hog.detectMultiScale(gray, found_locations, found_weights, hit_threshold, win_stride, padding, scale, 2.0, false);
+        // Detección multiescala en la imagen rectificada.
+        // Se establece finalThreshold = 0.0 para conservar las confianzas sin agrupar por defecto.
+        hog.detectMultiScale(gray, found_locations, found_weights, hit_threshold, win_stride, padding, scale, 0.0, false);
 
-        // 2. PARAMETROS DE LIMPIEZA (NMS - Non-Maximum Suppression)
-        float nms_confidence_threshold = 3.5f; // Confianza mínima absoluta. Todo lo menor a esto se borra. Súbelo a 4.5 o 5.5 si sigues viendo basura.
-        float nms_overlap_threshold = 0.3f;    // Qué tanto se permite que dos cajas se toquen (0.3 = 30%).
-        
-        // =========================================================================================
+        float nms_confidence_threshold = static_cast<float>(nms_conf_slider) / 10.0f;
+        float nms_overlap_threshold = 0.3f;    
 
-        // 🚀 Aplicar filtro NMS para dejar un solo Bounding Box
+        // Supresión de no-máximos (NMS) para unificar detecciones solapadas en la ventana con mayor confianza
         std::vector<float> found_weights_float(found_weights.begin(), found_weights.end());
         std::vector<int> indices;
         cv::dnn::NMSBoxes(found_locations, found_weights_float, nms_confidence_threshold, nms_overlap_threshold, indices);
 
-        for (int idx : indices) {
+        // Lógica de "Confirmación de 2 segundos"
+        static int detectionFrameCount = 0;
+        const int REQUIRED_FRAMES = 60; // Aproximadamente 2 segundos a 30 FPS
+
+        if (!indices.empty()) {
+            detectionFrameCount++;
+            
+            // Dibujamos solo la mejor caja (la primera en indices suele ser la de mayor confianza por el NMS)
+            int idx = indices[0];
             cv::Rect r = found_locations[idx];
             double confidence = found_weights[idx];
 
@@ -225,18 +251,30 @@ int main() {
             std::string label = cv::format("Furgoneta (Conf: %.2f)", confidence);
             cv::putText(frame, label, cv::Point(r.x, r.y - 10), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
 
-            // Lógica de "Trigger"
-            if (!isRecording) {
-                std::cout << "\n🚨 ¡FURGONETA DETECTADA! Nivel de confianza: " << confidence << "\n";
-                std::cout << "   Guardando fotografía clave...\n";
+            // Mostrar progreso de confirmación
+            if (!isRecording && detectionFrameCount < REQUIRED_FRAMES) {
+                std::string progressMsg = cv::format("Confirmando... %d / %d frames", detectionFrameCount, REQUIRED_FRAMES);
+                cv::putText(frame, progressMsg, cv::Point(r.x, r.y - 35), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 165, 255), 2);
+            }
+
+            // Activación del evento al superar el umbral de persistencia temporal
+            if (!isRecording && detectionFrameCount >= REQUIRED_FRAMES) {
+                std::cout << "\n[ALERTA] ¡Vehículo objetivo confirmado! Nivel de confianza: " << confidence << "\n";
+                std::cout << "         Guardando fotografía clave de evidencia...\n";
                 cv::imwrite("evidencia_foto.jpg", frame);
                 
                 // Al poner esto en true, el hilo paralelo empieza a grabar 5 segundos de inmediato
-                isRecording = true; 
+                isRecording = true;
+                
+                // Reseteamos el contador para la próxima vez (después de que termine de grabar)
+                detectionFrameCount = 0; 
             }
+        } else {
+            // Si en este frame NO hay detección, reseteamos el contador (exige detecciones consecutivas)
+            detectionFrameCount = 0;
         }
 
-        // Etapa 3.1: Imprimir telemetría en pantalla
+        // Cálculo y visualización de telemetría de rendimiento (FPS y memoria RAM)
         int64 t_end = cv::getTickCount();
         double fps = tickFreq / (t_end - t_start);
         double ramMB = getMemoryUsageMB();
@@ -244,8 +282,8 @@ int main() {
         std::string stats = cv::format("FPS: %.1f | Consumo RAM: %.1f MB", fps, ramMB);
         cv::putText(frame, stats, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
 
-        // Mostrar el resultado en vivo
-        cv::imshow("Deteccion HOG+SVM (Fase 3)", frame);
+        // Actualizar visualización principal
+        cv::imshow("Detector HOG+SVM", frame);
 
         // Salir con 'q'
         if (cv::waitKey(1) == 'q') {

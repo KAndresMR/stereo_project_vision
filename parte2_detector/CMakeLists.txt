@@ -1,3 +1,7 @@
+# ==============================================================================
+# Configuración de compilación para la aplicación de escritorio TriggerApp (C++)
+# Detección de vehículos en tiempo real mediante HOG + SVM y OpenCV
+# ==============================================================================
 cmake_minimum_required(VERSION 3.16)
 project(TriggerApp)
 
