@@ -72,7 +72,7 @@ std::atomic<bool> stopApp(false);
 // Parámetros dinámicos vinculados a la interfaz gráfica (trackbars)
 int hit_thresh_slider = 5;      // Representa 0.5 (x10)
 int nms_conf_slider = 10;       // Representa 1.0 (x10)
-int scale_slider = 115;         // Representa 1.15 (x100)
+int winstride_slider = 16;      // Win stride en píxeles (8 o 16)
 
 // Función ejecutada en hilo secundario para grabar clips de evidencia y enviarlos
 void recorderThreadFunc(int fps, cv::Size size) {
@@ -185,7 +185,7 @@ int main() {
     cv::namedWindow(winName, cv::WINDOW_AUTOSIZE);
     cv::createTrackbar("Hit Threshold (x10)", winName, &hit_thresh_slider, 30);
     cv::createTrackbar("NMS Conf (x10)", winName, &nms_conf_slider, 30);
-    cv::createTrackbar("Scale (x100)", winName, &scale_slider, 150);
+    cv::createTrackbar("Win Stride", winName, &winstride_slider, 32);
 
     // Inicializar CLAHE una sola vez fuera del bucle para evitar asignaciones repetidas en memoria
     cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
@@ -196,7 +196,19 @@ int main() {
         int64 t_start = cv::getTickCount();
         
         cap >> frame;
-        if (frame.empty()) break;
+        static int empty_frames = 0;
+        if (frame.empty()) {
+            empty_frames++;
+            if (empty_frames > 30) { // Límite de tolerancia a pérdida de señal de video (~1 segundo)
+                std::cerr << "[ERROR] Se perdió la señal de la cámara tras 30 intentos consecutivos.\n";
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(30)); // Pausa de estabilización del sensor óptico
+            continue; // Reintentar en el siguiente ciclo
+        } else {
+            empty_frames = 0;
+        }
+
 
         // Almacenar frame limpio en la cola de grabación si el proceso está activo
         if (isRecording) {
@@ -213,25 +225,42 @@ int main() {
         std::vector<cv::Rect> found_locations;
         std::vector<double> found_weights;
         
-        // Lectura de parámetros de calibración en tiempo real desde los controles
-        if (scale_slider <= 100) scale_slider = 101; // Previene bucle infinito por factor de escala <= 1.0
-        
+        // Lectura de parámetros en tiempo real desde los controles
+        if (winstride_slider < 4) winstride_slider = 4;  // Mínimo 4px
+        // Redondear win_stride al múltiplo de 4 más cercano
+        int stride_val = (winstride_slider / 4) * 4;
+        if (stride_val < 4) stride_val = 4;
+
         double hit_threshold = static_cast<double>(hit_thresh_slider) / 10.0;
-        double scale = static_cast<double>(scale_slider) / 100.0;
-        cv::Size win_stride(16, 16); 
+        double scale = 1.15; // Fijo, no necesita slider
+        cv::Size win_stride(stride_val, stride_val); 
         cv::Size padding(16, 16);    
 
-        // Detección multiescala en la imagen rectificada.
-        // Se establece finalThreshold = 0.0 para conservar las confianzas sin agrupar por defecto.
         hog.detectMultiScale(gray, found_locations, found_weights, hit_threshold, win_stride, padding, scale, 0.0, false);
 
         float nms_confidence_threshold = static_cast<float>(nms_conf_slider) / 10.0f;
         float nms_overlap_threshold = 0.3f;    
 
+
         // Supresión de no-máximos (NMS) para unificar detecciones solapadas en la ventana con mayor confianza
         std::vector<float> found_weights_float(found_weights.begin(), found_weights.end());
         std::vector<int> indices;
         cv::dnn::NMSBoxes(found_locations, found_weights_float, nms_confidence_threshold, nms_overlap_threshold, indices);
+
+        // Filtrar detecciones por geometría y escala proporcional
+        // Proporción esperada para objeto en formato A4 a 1m de distancia sobre resolución 640x480
+        // Límite inferior: 60x45 px | Límite superior: 80% del área total del fotograma
+        std::vector<int> filtered_indices;
+        for (int idx : indices) {
+            cv::Rect r = found_locations[idx];
+            if (r.width >= 60 && r.height >= 45 && 
+                r.width < frame.cols * 0.8 && r.height < frame.rows * 0.8) {
+                filtered_indices.push_back(idx);
+            }
+        }
+        indices = filtered_indices;
+
+
 
         // Lógica de "Confirmación de 2 segundos"
         static int detectionFrameCount = 0;
@@ -278,6 +307,12 @@ int main() {
         int64 t_end = cv::getTickCount();
         double fps = tickFreq / (t_end - t_start);
         double ramMB = getMemoryUsageMB();
+
+        // Mostrar valores actuales de los parámetros en pantalla
+        std::string paramInfo = cv::format("HitTh: %.1f | NMS: %.1f | Stride: %d", 
+        hit_threshold, nms_confidence_threshold, stride_val);
+        cv::putText(frame, paramInfo, cv::Point(10, 60), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 200, 0), 2);
+
 
         std::string stats = cv::format("FPS: %.1f | Consumo RAM: %.1f MB", fps, ramMB);
         cv::putText(frame, stats, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
